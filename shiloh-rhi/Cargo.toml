@@ -1,6 +1,6 @@
 [package]
 name = "shiloh-rhi"
-description = "Render hardware interface — GPU backends for Shiloh3D (Rust-first)"
+description = "Render hardware interface — native-first GPU backends (Vulkan/D3D12/Metal), wgpu extension, WebGL"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -16,14 +16,20 @@ parking_lot.workspace = true
 shiloh-core = { workspace = true }
 thiserror.workspace = true
 tracing.workspace = true
-# Native GPU stack is optional — default is the pure-Rust null/software path.
+# Extension path (desktop + WebGPU). Native primary backends land separately.
 wgpu = { workspace = true, optional = true }
 raw-window-handle = { workspace = true, optional = true }
 
 [features]
 default = []
-# wgpu pulls native graphics APIs via system libraries; enable when linking a GPU app.
+# Primary shipping path — platform native APIs (stubs until wired).
+native = []
+# Extension: portable wgpu (also WebGPU in browsers).
 wgpu = ["dep:wgpu", "dep:raw-window-handle"]
+# Browser reach path.
+webgl = []
+# Browser matrix helper.
+web = ["webgl", "wgpu"]
 
 [lints]
 workspace = true

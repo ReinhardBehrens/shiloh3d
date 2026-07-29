@@ -1,8 +1,9 @@
-//! Query stubs for iterating matching archetypes.
+//! Query helpers for iterating matching archetypes.
 
 use ahash::AHashSet;
 
 use crate::component::{Component, ComponentId};
+use crate::entity::Entity;
 use crate::world::World;
 
 /// Declares which component types a system wants to read/write.
@@ -36,5 +37,13 @@ impl<T: Component> QueryData for &T {
 impl<T: Component> QueryData for &mut T {
     fn required(world: &World) -> AHashSet<ComponentId> {
         <&T as QueryData>::required(world)
+    }
+}
+
+impl Query<()> {
+    /// Collect entities that currently have component `T`.
+    pub fn entities_with<T: Component>(world: &World) -> Vec<Entity> {
+        let required = <&T as QueryData>::required(world);
+        world.entities_with(&required)
     }
 }

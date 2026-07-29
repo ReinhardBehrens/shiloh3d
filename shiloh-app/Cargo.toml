@@ -33,6 +33,8 @@ pollster = { workspace = true, optional = true }
 default = []
 window = ["dep:winit", "dep:pollster"]
 gpu = ["shiloh-rhi/wgpu", "shiloh-render/wgpu"]
+# Convenience: window + selectable RHI device install.
+desktop = ["window", "gpu"]
 
 [lints]
 workspace = true

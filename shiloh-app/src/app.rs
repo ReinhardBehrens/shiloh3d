@@ -90,11 +90,40 @@ impl App {
         self.phase
     }
 
+    pub fn set_device(&mut self, device: Box<dyn Device>) {
+        self.device = device;
+    }
+
+    pub fn max_frames(&self) -> Option<u64> {
+        self.max_frames
+    }
+
     pub fn add_system(&mut self, stage: Stage, system: impl shiloh_ecs::System + 'static) {
         self.schedule.add_system(stage, system);
     }
 
-    /// Runs the main loop (headless). Windowed loop lands behind feature `window`.
+    /// One frame of the engine loop (headless or windowed host).
+    pub fn tick_once(&mut self) -> anyhow::Result<()> {
+        self.input.begin_frame();
+        let fixed_steps = self.time.tick();
+        let frame = self.time.frame();
+
+        self.schedule.run(&mut self.world);
+        self.schedule.run_fixed(&mut self.world, fixed_steps);
+
+        let ctx = FrameContext {
+            device: self.device.as_ref(),
+            frame_index: frame.frame_index,
+            width: 1280,
+            height: 720,
+        };
+        self.renderer.begin_frame(&ctx);
+        self.schedule.run_render(&mut self.world);
+        self.renderer.end_frame(self.device.as_ref())?;
+        Ok(())
+    }
+
+    /// Runs the main loop (headless). Windowed loop: feature `window`.
     pub fn run(mut self) -> anyhow::Result<()> {
         self.phase = Phase::Running;
         info!(
@@ -105,23 +134,8 @@ impl App {
         );
 
         loop {
-            self.input.begin_frame();
-            let fixed_steps = self.time.tick();
+            self.tick_once()?;
             let frame = self.time.frame();
-
-            self.schedule.run(&mut self.world);
-            self.schedule.run_fixed(&mut self.world, fixed_steps);
-
-            let ctx = FrameContext {
-                device: self.device.as_ref(),
-                frame_index: frame.frame_index,
-                width: 1280,
-                height: 720,
-            };
-            self.renderer.begin_frame(&ctx);
-            self.schedule.run_render(&mut self.world);
-            self.renderer.end_frame(self.device.as_ref())?;
-
             if let Some(max) = self.max_frames
                 && frame.frame_index >= max
             {

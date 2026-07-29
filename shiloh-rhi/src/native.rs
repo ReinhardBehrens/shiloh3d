@@ -1,59 +1,57 @@
-//! Optional wgpu backend (feature `wgpu`) — **extension**, not the primary path.
+//! Native GPU backend — **primary** shipping path (Vulkan / D3D12 / Metal).
 //!
-//! Use for portable desktop bring-up and **WebGPU** in browsers.
-//! Production native titles target `native` (Vulkan / D3D12 / Metal). See `docs/GRAPHICS.md`.
+//! Scaffold only. Real device creation lands behind OS-specific crates;
+//! `wgpu` remains an optional extension, not a replacement for this module.
 
-#![cfg(feature = "wgpu")]
-
-use crate::device::{Device, DeviceError, DeviceInfo, Queue};
 use crate::buffer::{BufferDesc, BufferHandle};
 use crate::command::{CommandEncoder, RenderPassDesc};
+use crate::device::{Device, DeviceError, DeviceInfo, Queue};
 use crate::texture::{TextureDesc, TextureHandle};
 
-/// Placeholder wgpu device — filled in when the GPU path is wired.
-pub struct WgpuDevice {
+/// Placeholder until ash / d3d12 / metal wiring lands.
+pub struct NativeDevice {
     info: DeviceInfo,
 }
 
-impl WgpuDevice {
-    pub fn stub() -> Self {
+impl NativeDevice {
+    pub fn stub_for_platform() -> Self {
         Self {
             info: DeviceInfo {
-                name: "wgpu (stub)".into(),
-                backend: "wgpu",
+                name: "Shiloh Native (stub)".into(),
+                backend: "native",
                 is_software: false,
             },
         }
     }
 }
 
-struct WgpuQueue;
-struct WgpuEncoder;
+struct NativeQueue;
+struct NativeEncoder;
 
-impl CommandEncoder for WgpuEncoder {
+impl CommandEncoder for NativeEncoder {
     fn begin_render_pass(&mut self, _desc: &RenderPassDesc<'_>) {}
     fn end_render_pass(&mut self) {}
 }
 
-impl Queue for WgpuQueue {
+impl Queue for NativeQueue {
     fn submit(&self, _encoder: Box<dyn CommandEncoder>) {}
     fn present(&self) {}
 }
 
-impl Device for WgpuDevice {
+impl Device for NativeDevice {
     fn info(&self) -> &DeviceInfo {
         &self.info
     }
 
     fn create_buffer(&self, _desc: &BufferDesc) -> Result<BufferHandle, DeviceError> {
         Err(DeviceError::Backend(
-            "wgpu backend not fully wired yet".into(),
+            "native backend not wired yet — use wgpu extension or null for now".into(),
         ))
     }
 
     fn create_texture(&self, _desc: &TextureDesc) -> Result<TextureHandle, DeviceError> {
         Err(DeviceError::Backend(
-            "wgpu backend not fully wired yet".into(),
+            "native backend not wired yet — use wgpu extension or null for now".into(),
         ))
     }
 
@@ -61,12 +59,11 @@ impl Device for WgpuDevice {
     fn destroy_texture(&self, _handle: TextureHandle) {}
 
     fn create_encoder(&self) -> Box<dyn CommandEncoder> {
-        Box::new(WgpuEncoder)
+        Box::new(NativeEncoder)
     }
 
     fn queue(&self) -> &dyn Queue {
-        // Leak a static queue for the stub — real impl owns the queue.
-        static Q: WgpuQueue = WgpuQueue;
+        static Q: NativeQueue = NativeQueue;
         &Q
     }
 }

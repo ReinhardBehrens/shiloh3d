@@ -10,19 +10,52 @@ use crate::entity::Entity;
 /// Sorted set of component IDs identifying an archetype.
 pub type Signature = SmallVec<[ComponentId; 8]>;
 
+type SwapRemoveFn = fn(&mut dyn Any, usize);
+type PushCloneFn = fn(&dyn Any, usize, &mut dyn Any);
+type MakeEmptyFn = fn() -> Box<dyn Any + Send + Sync>;
+
 /// Type-erased column of a single component type (SoA).
 pub struct Column {
     pub component: ComponentId,
     data: Box<dyn Any + Send + Sync>,
     len: usize,
+    swap_remove_fn: SwapRemoveFn,
+    push_clone_fn: PushCloneFn,
+    make_empty_fn: MakeEmptyFn,
 }
 
 impl Column {
-    pub fn new<T: Send + Sync + 'static>(component: ComponentId) -> Self {
+    pub fn new<T: Clone + Send + Sync + 'static>(component: ComponentId) -> Self {
         Self {
             component,
             data: Box::new(Vec::<T>::new()),
             len: 0,
+            swap_remove_fn: |any, row| {
+                any.downcast_mut::<Vec<T>>()
+                    .expect("column type mismatch")
+                    .swap_remove(row);
+            },
+            push_clone_fn: |src, row, dst| {
+                let v = src
+                    .downcast_ref::<Vec<T>>()
+                    .expect("column type mismatch")[row]
+                    .clone();
+                dst.downcast_mut::<Vec<T>>()
+                    .expect("column type mismatch")
+                    .push(v);
+            },
+            make_empty_fn: || Box::new(Vec::<T>::new()),
+        }
+    }
+
+    pub fn empty_like(&self) -> Self {
+        Self {
+            component: self.component,
+            data: (self.make_empty_fn)(),
+            len: 0,
+            swap_remove_fn: self.swap_remove_fn,
+            push_clone_fn: self.push_clone_fn,
+            make_empty_fn: self.make_empty_fn,
         }
     }
 
@@ -42,14 +75,14 @@ impl Column {
         self.len += 1;
     }
 
-    pub fn swap_remove<T: Send + Sync + 'static>(&mut self, row: usize) -> T {
-        let v = self
-            .data
-            .downcast_mut::<Vec<T>>()
-            .expect("column type mismatch")
-            .swap_remove(row);
+    pub fn swap_remove_erased(&mut self, row: usize) {
+        (self.swap_remove_fn)(self.data.as_mut(), row);
         self.len -= 1;
-        v
+    }
+
+    pub fn push_clone_from(&mut self, src: &Column, row: usize) {
+        (self.push_clone_fn)(src.data.as_ref(), row, self.data.as_mut());
+        self.len += 1;
     }
 
     pub fn get<T: Send + Sync + 'static>(&self, row: usize) -> Option<&T> {
@@ -94,8 +127,6 @@ impl Archetype {
     }
 
     pub fn with_signature(signature: Signature) -> Self {
-        // Columns are created lazily via World::ensure_column — do not pre-index
-        // component IDs here or `has()` will lie about empty column storage.
         Self {
             signature,
             entities: Vec::new(),
@@ -113,7 +144,10 @@ impl Archetype {
     }
 
     pub fn column_mut(&mut self, id: ComponentId) -> Option<&mut Column> {
-        self.column_index.get(&id).copied().map(|i| &mut self.columns[i])
+        self.column_index
+            .get(&id)
+            .copied()
+            .map(|i| &mut self.columns[i])
     }
 
     pub fn len(&self) -> usize {
@@ -142,7 +176,6 @@ pub struct Archetypes {
 impl Archetypes {
     pub fn new() -> Self {
         let mut a = Self::default();
-        // Archetype 0 = empty signature.
         a.archetypes.push(Archetype::empty());
         a.by_signature.insert(Signature::new(), 0);
         a

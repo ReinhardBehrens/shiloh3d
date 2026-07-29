@@ -1,59 +1,57 @@
-//! Optional wgpu backend (feature `wgpu`) — **extension**, not the primary path.
+//! WebGL backend — browser **reach** path (wasm32 / canvas).
 //!
-//! Use for portable desktop bring-up and **WebGPU** in browsers.
-//! Production native titles target `native` (Vulkan / D3D12 / Metal). See `docs/GRAPHICS.md`.
+//! Complements the wgpu extension (WebGPU). Prefer WebGL when WebGPU is
+//! unavailable; both are selected through the same RHI traits.
 
-#![cfg(feature = "wgpu")]
-
-use crate::device::{Device, DeviceError, DeviceInfo, Queue};
 use crate::buffer::{BufferDesc, BufferHandle};
 use crate::command::{CommandEncoder, RenderPassDesc};
+use crate::device::{Device, DeviceError, DeviceInfo, Queue};
 use crate::texture::{TextureDesc, TextureHandle};
 
-/// Placeholder wgpu device — filled in when the GPU path is wired.
-pub struct WgpuDevice {
+/// Placeholder until `web_sys` / glow WebGL wiring lands.
+pub struct WebGlDevice {
     info: DeviceInfo,
 }
 
-impl WgpuDevice {
+impl WebGlDevice {
     pub fn stub() -> Self {
         Self {
             info: DeviceInfo {
-                name: "wgpu (stub)".into(),
-                backend: "wgpu",
+                name: "Shiloh WebGL (stub)".into(),
+                backend: "webgl",
                 is_software: false,
             },
         }
     }
 }
 
-struct WgpuQueue;
-struct WgpuEncoder;
+struct WebGlQueue;
+struct WebGlEncoder;
 
-impl CommandEncoder for WgpuEncoder {
+impl CommandEncoder for WebGlEncoder {
     fn begin_render_pass(&mut self, _desc: &RenderPassDesc<'_>) {}
     fn end_render_pass(&mut self) {}
 }
 
-impl Queue for WgpuQueue {
+impl Queue for WebGlQueue {
     fn submit(&self, _encoder: Box<dyn CommandEncoder>) {}
     fn present(&self) {}
 }
 
-impl Device for WgpuDevice {
+impl Device for WebGlDevice {
     fn info(&self) -> &DeviceInfo {
         &self.info
     }
 
     fn create_buffer(&self, _desc: &BufferDesc) -> Result<BufferHandle, DeviceError> {
         Err(DeviceError::Backend(
-            "wgpu backend not fully wired yet".into(),
+            "webgl backend not wired yet".into(),
         ))
     }
 
     fn create_texture(&self, _desc: &TextureDesc) -> Result<TextureHandle, DeviceError> {
         Err(DeviceError::Backend(
-            "wgpu backend not fully wired yet".into(),
+            "webgl backend not wired yet".into(),
         ))
     }
 
@@ -61,12 +59,11 @@ impl Device for WgpuDevice {
     fn destroy_texture(&self, _handle: TextureHandle) {}
 
     fn create_encoder(&self) -> Box<dyn CommandEncoder> {
-        Box::new(WgpuEncoder)
+        Box::new(WebGlEncoder)
     }
 
     fn queue(&self) -> &dyn Queue {
-        // Leak a static queue for the stub — real impl owns the queue.
-        static Q: WgpuQueue = WgpuQueue;
+        static Q: WebGlQueue = WebGlQueue;
         &Q
     }
 }

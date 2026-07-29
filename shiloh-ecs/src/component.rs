@@ -3,10 +3,10 @@
 use core::any::{Any, TypeId};
 use ahash::AHashMap;
 
-/// Marker for ECS components. `'static + Send + Sync` for parallel systems.
-pub trait Component: Any + Send + Sync + 'static {}
+/// Marker for ECS components. `'static + Send + Sync + Clone` for structural moves.
+pub trait Component: Any + Send + Sync + Clone + 'static {}
 
-impl<T: Any + Send + Sync + 'static> Component for T {}
+impl<T: Any + Send + Sync + Clone + 'static> Component for T {}
 
 /// Dense component type identifier assigned by the registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -1,0 +1,5 @@
+{
+  "name": "ShowcaseProject",
+  "engine_version": "0.1.0",
+  "default_scene": "scenes/main.json"
+}

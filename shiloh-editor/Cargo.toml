@@ -1,0 +1,23 @@
+[package]
+name = "shiloh-editor"
+description = "Scene editor and project management for Shiloh3D"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+shiloh-app = { workspace = true }
+shiloh-assets = { workspace = true }
+shiloh-core = { workspace = true }
+shiloh-ecs = { workspace = true }
+shiloh-scene = { workspace = true }
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

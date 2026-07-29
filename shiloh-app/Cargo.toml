@@ -1,0 +1,38 @@
+[package]
+name = "shiloh-app"
+description = "Window, lifecycle and platform integration for Shiloh3D"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "shiloh"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+shiloh-animation = { workspace = true }
+shiloh-assets = { workspace = true }
+shiloh-audio = { workspace = true }
+shiloh-core = { workspace = true }
+shiloh-ecs = { workspace = true }
+shiloh-input = { workspace = true }
+shiloh-physics = { workspace = true }
+shiloh-render = { workspace = true }
+shiloh-rhi = { workspace = true }
+shiloh-scene = { workspace = true }
+shiloh-scripting = { workspace = true }
+tracing.workspace = true
+# Native windowing is optional — headless app runs on pure Rust by default.
+winit = { workspace = true, optional = true }
+pollster = { workspace = true, optional = true }
+
+[features]
+default = []
+window = ["dep:winit", "dep:pollster"]
+gpu = ["shiloh-rhi/wgpu", "shiloh-render/wgpu"]
+
+[lints]
+workspace = true

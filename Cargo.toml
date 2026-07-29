@@ -1,0 +1,106 @@
+[workspace]
+resolver = "2"
+members = [
+    "shiloh-core",
+    "shiloh-ecs",
+    "shiloh-rhi",
+    "shiloh-render",
+    "shiloh-scene",
+    "shiloh-assets",
+    "shiloh-physics",
+    "shiloh-animation",
+    "shiloh-audio",
+    "shiloh-input",
+    "shiloh-network",
+    "shiloh-scripting",
+    "shiloh-app",
+    "shiloh-editor",
+    "shiloh-cli",
+    "shiloh-demo",
+]
+default-members = ["shiloh-app", "shiloh-cli", "shiloh-demo"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["Shiloh3D Contributors"]
+rust-version = "1.85"
+repository = "https://github.com/ReinhardBehrens/shiloh3d"
+
+[workspace.dependencies]
+# Internal crates
+shiloh-core = { path = "shiloh-core" }
+shiloh-ecs = { path = "shiloh-ecs" }
+shiloh-rhi = { path = "shiloh-rhi" }
+shiloh-render = { path = "shiloh-render" }
+shiloh-scene = { path = "shiloh-scene" }
+shiloh-assets = { path = "shiloh-assets" }
+shiloh-physics = { path = "shiloh-physics" }
+shiloh-animation = { path = "shiloh-animation" }
+shiloh-audio = { path = "shiloh-audio" }
+shiloh-input = { path = "shiloh-input" }
+shiloh-network = { path = "shiloh-network" }
+shiloh-scripting = { path = "shiloh-scripting" }
+shiloh-app = { path = "shiloh-app" }
+shiloh-editor = { path = "shiloh-editor" }
+
+# Math / memory layout
+glam = { version = "0.30", features = ["bytemuck", "serde"] }
+bytemuck = { version = "1", features = ["derive"] }
+
+# Concurrency / scheduling
+parking_lot = "0.12"
+crossbeam = "0.8"
+rayon = "1.10"
+
+# Collections tuned for engines
+ahash = "0.8"
+slotmap = "1.0"
+smallvec = "1.15"
+bitflags = "2.9"
+
+# Diagnostics / errors / config
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "2"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Platform / GPU — enable native backends per OS (Windows / macOS / Linux).
+winit = { version = "0.30", features = ["rwh_06"] }
+wgpu = { version = "25", features = ["wgsl"] }
+pollster = "0.4"
+raw-window-handle = "0.6"
+web-time = "1"
+
+# CLI / editor tooling
+clap = { version = "4", features = ["derive"] }
+notify = "8"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+missing_docs = "allow"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "allow", priority = -1 }
+nursery = { level = "allow", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+# Performance-oriented release profile for engine binaries.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "debuginfo"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

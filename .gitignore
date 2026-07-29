@@ -1,0 +1,27 @@
+# Rust
+/target/
+**/target/
+# Commit Cargo.lock for reproducible engine/demo builds.
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Engine runtime / local
+*.log
+.cache/
+dist/
+out/
+*.pdb
+
+# Environment / secrets
+.env
+.env.*
+!*.env.example
+
+# OS
+Thumbs.db

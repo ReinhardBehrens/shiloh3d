@@ -1,0 +1,39 @@
+[package]
+name = "shiloh-demo"
+description = "Cross-platform showcase demo for the Shiloh3D engine (Windows / macOS / Linux)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "shiloh-demo"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+bytemuck.workspace = true
+clap.workspace = true
+glam.workspace = true
+pollster.workspace = true
+rayon.workspace = true
+serde_json.workspace = true
+shiloh-animation = { workspace = true }
+shiloh-assets = { workspace = true }
+shiloh-audio = { workspace = true }
+shiloh-core = { workspace = true }
+shiloh-ecs = { workspace = true }
+shiloh-editor = { workspace = true }
+shiloh-input = { workspace = true }
+shiloh-network = { workspace = true }
+shiloh-physics = { workspace = true }
+shiloh-render = { workspace = true, features = ["wgpu"] }
+shiloh-rhi = { workspace = true, features = ["wgpu"] }
+shiloh-scene = { workspace = true }
+shiloh-scripting = { workspace = true }
+tracing.workspace = true
+winit.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,24 @@
+[package]
+name = "shiloh-cli"
+description = "Build, package, import and automation tools for Shiloh3D"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "shiloh-cli"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+shiloh-assets = { workspace = true }
+shiloh-core = { workspace = true }
+shiloh-editor = { workspace = true }
+tracing.workspace = true
+
+[lints]
+workspace = true

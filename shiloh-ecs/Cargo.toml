@@ -1,0 +1,19 @@
+[package]
+name = "shiloh-ecs"
+description = "Entities, components, systems and scheduling for Shiloh3D"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ahash.workspace = true
+parking_lot.workspace = true
+shiloh-core = { workspace = true }
+smallvec.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

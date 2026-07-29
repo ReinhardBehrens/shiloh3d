@@ -1,0 +1,18 @@
+[package]
+name = "shiloh-physics"
+description = "Physics abstraction for Shiloh3D (Rust backends)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+glam.workspace = true
+shiloh-core = { workspace = true }
+shiloh-ecs = { workspace = true }
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,29 @@
+[package]
+name = "shiloh-rhi"
+description = "Render hardware interface — GPU backends for Shiloh3D (Rust-first)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ahash.workspace = true
+bitflags.workspace = true
+bytemuck.workspace = true
+glam.workspace = true
+parking_lot.workspace = true
+shiloh-core = { workspace = true }
+thiserror.workspace = true
+tracing.workspace = true
+# Native GPU stack is optional — default is the pure-Rust null/software path.
+wgpu = { workspace = true, optional = true }
+raw-window-handle = { workspace = true, optional = true }
+
+[features]
+default = []
+# wgpu pulls native graphics APIs via system libraries; enable when linking a GPU app.
+wgpu = ["dep:wgpu", "dep:raw-window-handle"]
+
+[lints]
+workspace = true

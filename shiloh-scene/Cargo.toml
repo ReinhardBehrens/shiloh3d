@@ -1,0 +1,25 @@
+[package]
+name = "shiloh-scene"
+description = "Scenes, hierarchy, transforms and prefabs for Shiloh3D"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+glam.workspace = true
+parking_lot.workspace = true
+serde = { workspace = true, optional = true }
+shiloh-core = { workspace = true }
+shiloh-ecs = { workspace = true }
+smallvec.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[features]
+default = []
+serde = ["dep:serde", "glam/serde"]
+
+[lints]
+workspace = true

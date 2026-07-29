@@ -1,0 +1,29 @@
+[package]
+name = "shiloh-render"
+description = "Render graph and high-level renderer for Shiloh3D"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ahash.workspace = true
+anyhow = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true }
+glam.workspace = true
+parking_lot.workspace = true
+shiloh-core = { workspace = true }
+shiloh-rhi = { workspace = true }
+smallvec.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+wgpu = { workspace = true, optional = true }
+winit = { workspace = true, optional = true }
+
+[features]
+default = []
+wgpu = ["dep:wgpu", "dep:bytemuck", "dep:anyhow", "dep:winit", "shiloh-rhi/wgpu"]
+
+[lints]
+workspace = true

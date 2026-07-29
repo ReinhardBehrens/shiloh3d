@@ -1,6 +1,9 @@
 # Shiloh3D Showcase Demo
 
-Cross-platform demo for **Windows**, **macOS**, and **Linux**. It boots a windowed `wgpu` forward renderer and ticks every major engine crate in one scene.
+Cross-platform demo for **Windows**, **macOS**, and **Linux**.
+
+This binary currently drives the **wgpu extension** path to prove the frame loop quickly.  
+Shiloh3D’s **primary** graphics direction is **native** (Vulkan / D3D12 / Metal); Web uses **WebGL** (+ WebGPU via wgpu). See [docs/GRAPHICS.md](../docs/GRAPHICS.md).
 
 ## Run
 
@@ -42,7 +45,7 @@ cargo run -p shiloh-demo -- --headless-frames 120
 | **shiloh-network** | In-memory replication packets |
 | **shiloh-scripting** | Rust `ScriptModule` heartbeat |
 | **shiloh-editor** | Project manifest on disk |
-| **shiloh-rhi** | Null device exercised beside wgpu |
+| **shiloh-rhi** | Null device + wgpu extension (native/WebGL stubs available on features) |
 
 ## Shaders
 
@@ -54,10 +57,10 @@ Bundled WGSL (compiled into `shiloh-render`):
 
 ## Platform notes
 
-Uses `winit` + `wgpu` with default platform backends:
+Demo bring-up uses `winit` + **wgpu extension**:
 
-- **Windows** — Win32 + DX12/Vulkan  
-- **macOS** — Cocoa + Metal  
-- **Linux** — X11/Wayland + Vulkan  
+- **Windows** — Win32 + DX12/Vulkan via wgpu  
+- **macOS** — Cocoa + Metal via wgpu  
+- **Linux** — X11/Wayland + Vulkan via wgpu  
 
-Requires a working GPU driver and (for windowed mode) a display server.
+Production titles will prefer the **native** RHI backend. Browsers target **WebGL** / WebGPU. Requires a GPU driver and (for windowed mode) a display server.

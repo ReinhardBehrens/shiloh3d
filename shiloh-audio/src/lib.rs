@@ -1,4 +1,7 @@
-//! Spatial audio and mixing — pure Rust mixer stub (cpal/rodio later, still Rust).
+//! Spatial audio and mixing.
+//!
+//! Public mixer/listener API is Shiloh-owned. Kira / cpal / other native backends
+//! plug in behind this crate — do not re-export them from the public API.
 
 #![forbid(unsafe_code)]
 #![deny(rust_2018_idioms)]

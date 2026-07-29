@@ -12,9 +12,9 @@ use shiloh_input::InputState;
 use shiloh_network::{InMemoryTransport, Packet, ReplicationChannel, Transport};
 use shiloh_physics::{PhysicsWorld, RigidBody, RigidBodyKind, StubPhysics};
 use shiloh_rhi::{BufferDesc, BufferUsage, Device, NullDevice};
-use shiloh_scene::{Scene, Transform};
+use shiloh_scene::{Scene, Transform, propagate_transforms, set_parent};
 use shiloh_scripting::{ScriptContext, ScriptModule, ScriptRegistry};
-use tracing::debug;
+use tracing::{debug, info, warn};
 
 struct ShowcaseScript {
     pulses: u64,
@@ -52,6 +52,7 @@ pub struct ShowcaseState {
     null_rhi: NullDevice,
     cube_count: usize,
     net_ticks: u64,
+    pub gltf_prims: usize,
 }
 
 impl ShowcaseState {
@@ -59,12 +60,18 @@ impl ShowcaseState {
         let mut world = World::new();
         let mut scene = Scene::new(&config.app_name);
 
-        // Scene + ECS entities with transforms.
+        // Scene hierarchy: root + children (exercises GlobalTransform propagation).
+        let root = scene.spawn_transform(Transform::from_translation(glam::Vec3::ZERO));
         for i in 0..cubes.min(16) {
-            let t = Transform::from_translation(glam::Vec3::new(i as f32, 0.0, 0.0));
-            scene.spawn_transform(t);
+            let child = scene.spawn_transform(Transform::from_translation(glam::Vec3::new(
+                i as f32 * 0.5,
+                0.25,
+                0.0,
+            )));
+            set_parent(&mut scene.world, child, root);
             world.spawn(Transform::from_translation(glam::Vec3::X * i as f32));
         }
+        propagate_transforms(&mut scene.world);
 
         let mut physics_backend = StubPhysics::new();
         physics_backend.add_body(RigidBody {
@@ -114,13 +121,34 @@ impl ShowcaseState {
         let pkg_path = asset_dir.join("package.json");
         std::fs::write(&pkg_path, serde_json::to_string_pretty(&pkg)?)?;
 
-        // Editor project sidecar (optional, under target-friendly temp in assets).
+        // Optional glTF smoke-load (place sample.glb under demo assets/).
+        let mut gltf_prims = 0usize;
+        let gltf_path = asset_dir.join("sample.glb");
+        if gltf_path.exists() {
+            match shiloh_assets::load_gltf(&gltf_path) {
+                Ok(doc) => {
+                    gltf_prims = doc.primitives.len();
+                    info!(
+                        path = %gltf_path.display(),
+                        prims = gltf_prims,
+                        skinned = doc.skin.is_some(),
+                        "loaded glTF"
+                    );
+                }
+                Err(err) => warn!(?err, "glTF load failed"),
+            }
+        } else {
+            debug!(
+                path = %gltf_path.display(),
+                "no sample.glb — using procedural skinned mesh in renderer"
+            );
+        }
+
         let project_dir = asset_dir.join("demo_project");
         if !project_dir.join("shiloh.project.json").exists() {
             let _ = Project::create(&project_dir, "ShowcaseProject");
         }
 
-        // Touch null RHI path so the abstraction stays exercised beside wgpu.
         let null_rhi = NullDevice::new();
         let _ = null_rhi.create_buffer(&BufferDesc {
             size: 256,
@@ -142,6 +170,7 @@ impl ShowcaseState {
             null_rhi,
             cube_count: cubes as usize,
             net_ticks: 0,
+            gltf_prims,
         })
     }
 
@@ -161,7 +190,6 @@ impl ShowcaseState {
             self.physics.step(1.0 / 60.0);
         }
 
-        // Job system fence — schedule a trivial parallel batch each frame.
         let barrier = jobs.spawn_batch((0..4u32).map(|i| {
             move || {
                 let _ = i.wrapping_mul(7);
@@ -175,6 +203,7 @@ impl ShowcaseState {
         let _ = self.anim.current;
         let _ = self.blend.clips.len();
         let _ = time_secs;
+        let _ = self.gltf_prims;
 
         let mut ctx = ScriptContext {
             world: &mut self.world,
@@ -193,9 +222,7 @@ impl ShowcaseState {
             let _ = self.transport_b.recv();
         }
 
-        // Touch asset cache so the subsystem stays in the live demo path.
         let _ = self.assets.state(shiloh_assets::AssetId::from_raw(0));
-
         let _ = self.null_rhi.info();
     }
 }

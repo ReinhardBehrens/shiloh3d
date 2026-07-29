@@ -1,4 +1,7 @@
-//! Physics abstraction — pluggable Rust backends (rapier later), stub world now.
+//! Physics abstraction — pluggable backends.
+//!
+//! Public API is Shiloh-owned (`PhysicsBackend`, `RigidBody`, …).
+//! Rapier (or any other solver) must stay behind this façade — do not re-export it.
 
 #![forbid(unsafe_code)]
 #![deny(rust_2018_idioms)]

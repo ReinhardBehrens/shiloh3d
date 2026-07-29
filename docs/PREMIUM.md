@@ -23,13 +23,17 @@ The Shiloh3D mark is a faceted crimson hexagon with a cut **S** — low-poly geo
 
 ## Positioning
 
-Shiloh3D is a **from-scratch Rust 3D engine**: modular crates, cache-conscious ECS, job scheduling, and a render-graph front end over an abstract RHI. Defaults stay **pure Rust** (headless / null GPU) so CI and tooling never require Vulkan/Metal SDKs. Production graphics plug in via optional `wgpu`.
+Shiloh3D is a **from-scratch Rust 3D engine**: modular crates, cache-conscious ECS, job scheduling, and a render-graph front end over an abstract RHI.
+
+**Graphics:** **wgpu + WGSL bootstrap** behind Shiloh RHI; **native** Vulkan/D3D12/Metal for shipping desktop; **WebGL** / WebGPU for browsers. Third parties stay wrapped ([TECH_STACK.md](TECH_STACK.md), [GRAPHICS.md](GRAPHICS.md)).
+
+**Product thesis:** compete on *usability* and *selected graphical quality* (excellent PBR, large-world support, first-class multiplayer, polished editor) — not on matching any commercial engine’s entire feature list. Ship a playable vertical slice before expanding.
 
 **Who it’s for**
 
-- Engine and gameplay programmers who want a clear Rust crate graph  
-- Teams that want scripting (Rust modules now; JavaScript / Rhai later) without abandoning native performance  
-- Projects that need headless simulation and a future editor on the same runtime  
+- Teams that want a fast, safe, open Rust runtime with a serious editor path  
+- Gameplay programmers who prefer clear crates and native Rust modules (JS / visual scripting later)  
+- Projects that need headless simulation and a shared editor/runtime architecture  
 
 ---
 
@@ -60,7 +64,7 @@ flowchart LR
   subgraph Present
     Graph[Render graph]
     RHI[RHI]
-    GPU[(Null / wgpu)]
+    GPU[(Native · wgpu · WebGL · Null)]
   end
 
   CLI --> Editor
@@ -97,7 +101,7 @@ flowchart LR
 |---|---|
 | **shiloh-core** | Generational handles, clocks, work-stealing jobs, TOML config, tracing |
 | **shiloh-ecs** | Archetype SoA world, staged schedules, system trait object model |
-| **shiloh-rhi** | Backend-agnostic buffers/textures/encoders; `NullDevice` shipped; wgpu feature-gated |
+| **shiloh-rhi** | Native-first RHI; wgpu extension; WebGL; `NullDevice` for CI |
 | **shiloh-render** | Transient render graph with resource IDs and topological pass order |
 | **shiloh-scene** | Local/global transforms, parent/children, prefab stubs |
 | **shiloh-assets** | Path-keyed cache, importers, JSON packages, optional file watch |
@@ -184,8 +188,9 @@ A [`screenshots/README.md`](screenshots/README.md) lists exact filenames and sug
 | Target | Notes |
 |---|---|
 | Linux desktop | Primary; `gcc`/`clang` linker |
-| Headless CI | Default features — no GPU required |
-| GPU apps | `--features wgpu` on RHI / render / app |
+| Headless CI | Null device — no GPU required |
+| Desktop apps | **Native** primary (when wired); wgpu extension for bring-up / portable builds |
+| Browser | WebGL + WebGPU (wgpu) via `web` feature |
 | Windowed host | `--features window` on `shiloh-app` (when wired) |
 
 ```bash

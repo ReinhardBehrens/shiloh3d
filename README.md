@@ -6,14 +6,26 @@
 
 <p align="center">
   <strong>A modern 3D game engine written in Rust — from scratch.</strong><br/>
-  Performance-first · modular crates · pure-Rust defaults · optional GPU backends
+  Performance-first · custom façades · wgpu+WGSL bootstrap · native/web backends
 </p>
+
+<blockquote align="center">
+  <p>
+    <em>“And the whole congregation of the children of Israel assembled together at Shiloh,<br/>
+    and set up the tabernacle of the congregation there.<br/>
+    And the land was subdued before them.”</em><br/>
+    <sub>— Joshua 18:1 (KJV)</sub>
+  </p>
+</blockquote>
 
 <p align="center">
   <a href="#architecture">Architecture</a> ·
   <a href="#modules">Modules</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#features">Features</a> ·
+  <a href="docs/ROADMAP.md">Roadmap</a> ·
+  <a href="docs/TECH_STACK.md">Tech stack</a> ·
+  <a href="docs/GRAPHICS.md">Graphics</a> ·
   <a href="docs/PREMIUM.md">Premium tech brief</a>
 </p>
 
@@ -21,7 +33,11 @@
 
 ## What is Shiloh3D?
 
-**Shiloh3D** is a greenfield 3D game engine built as a Cargo workspace of focused crates. The stack favors industry patterns used in high-performance engines — generational IDs, archetype ECS, work-stealing jobs, render graphs — while keeping the **default build pure Rust** (no native GPU/window deps until you opt in).
+**Shiloh3D** is a greenfield 3D game engine built as a Cargo workspace of focused crates. Prefer **custom Shiloh code**; adopt crates like wgpu, winit, Rapier, and egui only behind **stable engine façades** ([docs/TECH_STACK.md](docs/TECH_STACK.md)).
+
+Graphics **bootstrap** is wgpu + WGSL; **shipping desktop** targets native Vulkan/D3D12/Metal on the same RHI; **web** uses WebGL / WebGPU ([docs/GRAPHICS.md](docs/GRAPHICS.md)). Headless CI uses a null device.
+
+**Direction:** a fast, safe, open Rust engine with a polished visual editor, excellent PBR, large-world support, and first-class multiplayer — proven first as a **vertical slice**, then expanded. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 | | |
 |---|---|
@@ -29,7 +45,7 @@
 | **License** | MIT OR Apache-2.0 |
 | **Status** | Early foundation (`0.1.0`) — runtime shell + crate architecture |
 | **Math** | [`glam`](https://docs.rs/glam) |
-| **GPU path** | Abstract RHI → optional [`wgpu`](https://wgpu.rs) |
+| **GPU path** | wgpu+WGSL bootstrap behind RHI · native shipping · WebGL/WebGPU — [GRAPHICS](docs/GRAPHICS.md) · [TECH_STACK](docs/TECH_STACK.md) |
 | **Scripting** | Native Rust modules first; embeddable JS / Rhai planned |
 
 ---
@@ -120,7 +136,8 @@ sequenceDiagram
 - **Archetype ECS** — cache-friendly SoA storage for systems  
 - **Job system** — work-stealing workers for parallel frame work  
 - **Render graph** — declare passes/resources; compile to execution order  
-- **Rust as far as possible** — null/software backends by default; `wgpu` / windowing behind features  
+- **Native-first graphics** — RHI with Vulkan/D3D12/Metal primary; wgpu + WebGL as extensions (see [GRAPHICS.md](docs/GRAPHICS.md))  
+- **Rust as far as possible** — null device by default for CI; windowing / GPU features opt-in  
 - **Scripting-ready** — `ScriptModule` today; custom JS/Rhai backends planned  
 
 ---
@@ -133,7 +150,7 @@ sequenceDiagram
 | [`shiloh-core`](shiloh-core/) | Generational IDs, time, logging, jobs, frame scratch, config |
 | [`shiloh-ecs`](shiloh-ecs/) | Entities, components, archetype storage, systems, stages |
 | [`shiloh-render`](shiloh-render/) | High-level renderer + transient render graph |
-| [`shiloh-rhi`](shiloh-rhi/) | Render hardware interface — `NullDevice` / optional wgpu |
+| [`shiloh-rhi`](shiloh-rhi/) | RHI — native primary, wgpu extension, WebGL, null |
 | [`shiloh-scene`](shiloh-scene/) | Scenes, parent/child hierarchy, transforms, prefabs |
 | [`shiloh-assets`](shiloh-assets/) | Import, cache, packages; optional hot-reload |
 | [`shiloh-physics`](shiloh-physics/) | Physics backend trait + stub integrator |
@@ -151,7 +168,7 @@ Shiloh3D
 ├── shiloh-core         IDs, time, logging, jobs and configuration
 ├── shiloh-ecs          Entities, components, systems and scheduling
 ├── shiloh-render       Render graph and high-level renderer
-├── shiloh-rhi          wgpu abstraction and GPU resources
+├── shiloh-rhi          Native GPU RHI (+ wgpu extension, WebGL)
 ├── shiloh-scene        Scenes, hierarchy, transforms and prefabs
 ├── shiloh-assets       Importing, caching, hot reload and packages
 ├── shiloh-physics      Physics abstraction
@@ -172,7 +189,7 @@ Shiloh3D
 |---|---|---|
 | **Core runtime** | Time, jobs, config, handles | Profiling hooks |
 | **ECS** | Spawn, components, staged schedule | Full archetype moves, parallel systems |
-| **Rendering** | Graph + null device | wgpu path, meshes, materials, PBR |
+| **Rendering** | Graph + null + wgpu demo path | Native backends, textures, PBR |
 | **Scene** | Transform + hierarchy types | Dirty propagation, prefab instantiate |
 | **Physics** | Stub backend | Rapier (Rust) integration |
 | **Audio** | Mixer stub | cpal / rodio output |
@@ -183,11 +200,15 @@ Shiloh3D
 Optional Cargo features:
 
 ```bash
-# GPU backend (wgpu) — still a Rust API; uses platform graphics drivers
+# Null RHI (CI)
+cargo check -p shiloh-rhi
+
+# wgpu extension (current demo path)
 cargo check -p shiloh-rhi --features wgpu
 
-# Native window (when wired)
-cargo check -p shiloh-app --features window
+# Native primary stubs / WebGL stubs
+cargo check -p shiloh-rhi --features native
+cargo check -p shiloh-rhi --features web
 ```
 
 ---
@@ -224,15 +245,25 @@ RUST_LOG=debug cargo run -p shiloh-app
 
 ## Tech stack (at a glance)
 
+Prefer custom Shiloh code; wrap third parties — full policy in [TECH_STACK.md](docs/TECH_STACK.md).
+
 | Concern | Choice |
 |---|---|
 | Workspace | Cargo resolver 2, shared lints & release LTO |
-| Concurrency | `crossbeam` deques, `parking_lot` |
-| Math / GPU layout | `glam`, `bytemuck` |
-| Config / serde | TOML + JSON |
-| Diagnostics | `tracing` / `tracing-subscriber` |
+| Math | `glam` (public exception for now) |
+| Concurrency | Custom `JobSystem` (+ Rayon inside impls) |
+| Config / assets | serde + versioned engine formats; **glTF** first |
+| Diagnostics | `tracing`; Tracy + GPU timestamps planned |
 | CLI | `clap` |
-| GPU (optional) | `wgpu` behind `shiloh-rhi/wgpu` |
+| GPU bootstrap | **wgpu** + **WGSL** behind `shiloh-rhi` / `shiloh-render` |
+| GPU shipping | Native Vulkan/D3D12/Metal on same RHI |
+| Web GPU | WebGL + WebGPU (wgpu) |
+| Window / input | **winit** behind `shiloh-app` / `shiloh-input` |
+| ECS | **Custom** `shiloh-ecs` |
+| Editor GUI | **egui** behind `shiloh-editor` (planned) |
+| Physics | **Rapier** behind `shiloh-physics` (planned) |
+| Audio | **Kira**/native behind `shiloh-audio` (planned) |
+| Scripting | Rust modules first |
 
 Release profile uses thin LTO and a single codegen unit for ship builds.
 
@@ -242,6 +273,10 @@ Release profile uses thin LTO and a single codegen unit for ship builds.
 
 | Doc | Description |
 |---|---|
+| **[Quality bar](docs/QUALITY_BAR.md)** | What it takes to ship ARPG-class worlds (reference analysis) |
+| **[Tech stack](docs/TECH_STACK.md)** | Advised crates, custom-first policy, API boundary rules |
+| **[Graphics backends](docs/GRAPHICS.md)** | wgpu bootstrap · native shipping · WebGL |
+| **[Roadmap](docs/ROADMAP.md)** | Phases 1–4 development sequence with live status |
 | **[Premium tech brief](docs/PREMIUM.md)** | Product-facing overview + screenshot gallery |
 | **[Performance review](docs/PERF_REVIEW.md)** | Hot-path review of demo + engine foundations |
 | **[Showcase demo](shiloh-demo/README.md)** | Cross-platform GPU demo (Win / macOS / Linux) |
@@ -251,14 +286,18 @@ Screenshots will live under [`docs/screenshots/`](docs/screenshots/) once the ed
 
 ---
 
-## Roadmap (high level)
+## Roadmap
 
-1. Complete ECS structural changes & queries  
-2. Wire `wgpu` device, swapchain, and a lit mesh pass  
-3. Transform hierarchy systems + asset pipeline (glTF)  
-4. Embed scripting backend (JS and/or Rhai)  
-5. Editor viewport, scene save/load, play mode  
-6. Physics (Rapier) + audio output  
+See **[docs/ROADMAP.md](docs/ROADMAP.md)** for the full four-phase plan.
+
+| Phase | Theme | Where we are |
+|---|---|---|
+| **1** | Core runtime | **In progress** — window/GPU/demo loop exist; textures, hierarchy systems, full ECS still open |
+| **2** | Usable 3D (vertical slice) | Next — editor + PBR path toward the product thesis |
+| **3** | Production workflow | Later — hot reload, packaging, profiling |
+| **4** | Competitive scale | Last — GPU-driven, GI, consoles, marketplace, … |
+
+**Near-term:** finish Phase 1, then one Phase 2 vertical slice (editor · PBR · world hooks · multiplayer foundations) before broadening scope.
 
 ---
 

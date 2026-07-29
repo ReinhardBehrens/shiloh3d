@@ -12,6 +12,7 @@ pub enum RigidBodyKind {
 #[derive(Debug, Clone, Copy)]
 pub struct RigidBody {
     pub kind: RigidBodyKind,
+    pub position: Vec3,
     pub linear_velocity: Vec3,
     pub angular_velocity: Vec3,
     pub mass: f32,
@@ -21,6 +22,7 @@ impl Default for RigidBody {
     fn default() -> Self {
         Self {
             kind: RigidBodyKind::Dynamic,
+            position: Vec3::ZERO,
             linear_velocity: Vec3::ZERO,
             angular_velocity: Vec3::ZERO,
             mass: 1.0,

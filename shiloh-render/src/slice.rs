@@ -1,5 +1,6 @@
 //! Believable 3D slice — PBR forward, shadows, water, post, HUD, skinning.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable, bytes_of, cast_slice};
@@ -92,11 +93,16 @@ pub struct SliceDrawParams<'a> {
     pub saturation: f32,
     pub cube_instances: &'a [Mat4],
     pub sphere_instances: &'a [Mat4],
+    /// Instances of the optional imported mesh set via [`SliceRenderer::set_extra_mesh`].
+    /// Empty by default; harmless (draws nothing) when no extra mesh is uploaded.
+    pub extra_instances: &'a [Mat4],
     /// Optional root transform multiplied into each skin joint before upload.
     pub skinned_model: Option<Mat4>,
     pub skin_joints: &'a [Mat4],
     pub hud_verts: &'a [HudVertex],
     pub draw_water: bool,
+    /// When set, copies the presented frame to this PNG path after the pass.
+    pub screenshot_path: Option<&'a Path>,
 }
 
 struct GpuMesh {
@@ -135,6 +141,8 @@ pub struct SliceRenderer {
     cube: GpuMesh,
     sphere: GpuMesh,
     skinned: GpuMesh,
+    /// Optional GPU mesh uploaded via [`SliceRenderer::set_extra_mesh`] (e.g. an imported glTF).
+    extra: Option<GpuMesh>,
     instance_buf: wgpu::Buffer,
     instance_capacity: u32,
     hud_buf: wgpu::Buffer,
@@ -188,7 +196,7 @@ impl SliceRenderer {
             .unwrap_or(caps.formats[0]);
 
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             format,
             width,
             height,
@@ -740,6 +748,7 @@ impl SliceRenderer {
             cube,
             sphere,
             skinned,
+            extra: None,
             instance_buf,
             instance_capacity,
             hud_buf,
@@ -767,6 +776,13 @@ impl SliceRenderer {
             &self.hdr_view,
             &self.hdr_samp,
         );
+    }
+
+    /// Uploads (or replaces) the optional extra mesh — e.g. a converted glTF
+    /// import — drawn alongside the built-in cubes/spheres via
+    /// [`SliceDrawParams::extra_instances`], using the same shadow + PBR pipelines.
+    pub fn set_extra_mesh(&mut self, mesh: &SliceMeshCpu) {
+        self.extra = Some(upload_slice_mesh(&self.device, mesh, "slice_extra"));
     }
 
     pub fn render(&mut self, params: SliceDrawParams<'_>) -> anyhow::Result<()> {
@@ -862,8 +878,9 @@ impl SliceRenderer {
             self.queue.write_buffer(&self.skin_buf, 0, bytes_of(&skin));
         }
 
-        let mut packed: Vec<SliceInstance> =
-            Vec::with_capacity(params.cube_instances.len() + params.sphere_instances.len());
+        let mut packed: Vec<SliceInstance> = Vec::with_capacity(
+            params.cube_instances.len() + params.sphere_instances.len() + params.extra_instances.len(),
+        );
         packed.extend(
             params
                 .cube_instances
@@ -880,6 +897,14 @@ impl SliceRenderer {
                 .map(SliceInstance::from_mat4),
         );
         let sphere_count = params.sphere_instances.len() as u32;
+        packed.extend(
+            params
+                .extra_instances
+                .iter()
+                .copied()
+                .map(SliceInstance::from_mat4),
+        );
+        let extra_count = params.extra_instances.len() as u32;
 
         if packed.len() as u32 > self.instance_capacity {
             self.instance_capacity = (packed.len() as u32).next_power_of_two().max(64);
@@ -950,6 +975,15 @@ impl SliceRenderer {
                 pass.set_index_buffer(self.sphere.index.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..self.sphere.index_count, 0, 0..sphere_count);
             }
+            if extra_count > 0
+                && let Some(extra) = &self.extra
+            {
+                let offset = ((cube_count + sphere_count) as u64) * 64;
+                pass.set_vertex_buffer(0, extra.vertex.slice(..));
+                pass.set_vertex_buffer(1, self.instance_buf.slice(offset..));
+                pass.set_index_buffer(extra.index.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..extra.index_count, 0, 0..extra_count);
+            }
         }
 
         // --- Main HDR pass ---
@@ -995,6 +1029,15 @@ impl SliceRenderer {
                 pass.set_vertex_buffer(1, self.instance_buf.slice(offset..));
                 pass.set_index_buffer(self.sphere.index.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..self.sphere.index_count, 0, 0..sphere_count);
+            }
+            if extra_count > 0
+                && let Some(extra) = &self.extra
+            {
+                let offset = ((cube_count + sphere_count) as u64) * 64;
+                pass.set_vertex_buffer(0, extra.vertex.slice(..));
+                pass.set_vertex_buffer(1, self.instance_buf.slice(offset..));
+                pass.set_index_buffer(extra.index.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..extra.index_count, 0, 0..extra_count);
             }
 
             if draw_skinned {
@@ -1055,7 +1098,80 @@ impl SliceRenderer {
             pass.draw(0..hud_count, 0..1);
         }
 
+        let screenshot = params.screenshot_path.map(|path| {
+            let (w, h) = self.size;
+            let bpp = 4u32;
+            let unpadded_bytes_per_row = w * bpp;
+            let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+            let padded_bytes_per_row = (unpadded_bytes_per_row + align - 1) / align * align;
+            let buffer_size = padded_bytes_per_row as u64 * h as u64;
+            let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("slice_screenshot"),
+                size: buffer_size,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            encoder.copy_texture_to_buffer(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &frame.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &staging,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(padded_bytes_per_row),
+                        rows_per_image: Some(h),
+                    },
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+            (path.to_path_buf(), staging, padded_bytes_per_row, unpadded_bytes_per_row, w, h)
+        });
+
         self.queue.submit(std::iter::once(encoder.finish()));
+
+        if let Some((path, staging, padded, unpadded, w, h)) = screenshot {
+            let slice = staging.slice(..);
+            slice.map_async(wgpu::MapMode::Read, |_| {});
+            self.device
+                .poll(wgpu::PollType::Wait)
+                .map_err(|e| anyhow::anyhow!("screenshot map poll: {e}"))?;
+            let data = slice.get_mapped_range();
+            let mut rgba = Vec::with_capacity((unpadded * h) as usize);
+            for row in 0..h {
+                let start = (row * padded) as usize;
+                let end = start + unpadded as usize;
+                rgba.extend_from_slice(&data[start..end]);
+            }
+            drop(data);
+            staging.unmap();
+
+            // Swapchain is typically Bgra8UnormSrgb — convert to RGBA for PNG.
+            if matches!(
+                self.config.format,
+                wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+            ) {
+                for px in rgba.chunks_exact_mut(4) {
+                    px.swap(0, 2);
+                }
+            }
+            image::save_buffer(
+                &path,
+                &rgba,
+                w,
+                h,
+                image::ColorType::Rgba8,
+            )?;
+            info!(path = %path.display(), width = w, height = h, "wrote screenshot");
+        }
+
         frame.present();
         Ok(())
     }

@@ -3,9 +3,11 @@
 //! Iso camera · textured PBR · multi-light + shadows · skinned anim · fog ·
 //! water · HUD · tonemap · ECS hierarchy · scene JSON.
 
+mod gltf_gpu;
 mod showcase;
 mod winit_map;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
@@ -34,6 +36,9 @@ struct Args {
     /// Instance count for the cube field (GPU instancing stress).
     #[arg(long, default_value_t = 48)]
     cubes: u32,
+    /// Capture version screenshots into this directory, then exit.
+    #[arg(long)]
+    screenshot_dir: Option<PathBuf>,
 }
 
 struct DemoApp {
@@ -52,8 +57,13 @@ struct DemoApp {
     last_mouse: Option<(f64, f64)>,
     cube_mats: Vec<Mat4>,
     sphere_mats: Vec<Mat4>,
+    /// Instances for the optional imported glTF mesh (see `assets/sample.gltf`).
+    extra_mats: Vec<Mat4>,
     exit_requested: bool,
     scene_saved: bool,
+    screenshot_plan: Vec<(String, f32, Vec3, f32)>,
+    screenshot_index: usize,
+    screenshot_warmup: u32,
 }
 
 impl DemoApp {
@@ -83,6 +93,31 @@ impl DemoApp {
         let mut camera = Camera::isometric(Vec3::new(0.0, 0.5, 0.0), 18.0);
         camera.projection = ProjectionKind::Isometric;
 
+        let screenshot_plan = if args.screenshot_dir.is_some() {
+            vec![
+                (
+                    "v1-overview.png".into(),
+                    18.0,
+                    Vec3::ZERO,
+                    1.5,
+                ),
+                (
+                    "v1-character.png".into(),
+                    10.0,
+                    Vec3::new(2.0, 0.0, 1.5),
+                    3.2,
+                ),
+                (
+                    "v1-water-fog.png".into(),
+                    22.0,
+                    Vec3::new(-2.0, 0.0, 3.0),
+                    5.0,
+                ),
+            ]
+        } else {
+            Vec::new()
+        };
+
         Ok(Self {
             args,
             window: None,
@@ -99,8 +134,12 @@ impl DemoApp {
             last_mouse: None,
             cube_mats: Vec::new(),
             sphere_mats: Vec::new(),
+            extra_mats: Vec::new(),
             exit_requested: false,
             scene_saved: false,
+            screenshot_plan,
+            screenshot_index: 0,
+            screenshot_warmup: 0,
         })
     }
 
@@ -213,6 +252,27 @@ impl DemoApp {
         }
 
         self.update_camera();
+
+        // Automated version-1 screenshot camera positions.
+        let mut shot_path: Option<PathBuf> = None;
+        if let Some(dir) = self.args.screenshot_dir.clone() {
+            if self.screenshot_index < self.screenshot_plan.len() {
+                let (name, dist, pan, warmup_secs) =
+                    self.screenshot_plan[self.screenshot_index].clone();
+                self.distance = dist;
+                self.pan = pan;
+                self.update_camera();
+                self.screenshot_warmup += 1;
+                let need = (warmup_secs * 60.0).ceil() as u32;
+                if self.screenshot_warmup >= need.max(8) {
+                    std::fs::create_dir_all(&dir)?;
+                    shot_path = Some(dir.join(name));
+                }
+            } else {
+                self.exit_requested = true;
+            }
+        }
+
         self.showcase
             .tick(dt, fixed, t, &self.jobs, &self.input);
         propagate_transforms(&mut self.showcase.scene.world);
@@ -253,12 +313,15 @@ impl DemoApp {
         }
 
         let bob = (t * 1.2).sin() * 0.35;
+        let ball = self.showcase.physics_ball_position();
         self.sphere_mats = vec![
             Mat4::from_scale_rotation_translation(
                 Vec3::splat(1.1),
                 Quat::from_rotation_y(t * 0.4),
                 Vec3::new(0.0, 1.4 + bob, 0.0),
             ),
+            // Physics-driven ball (falls / slides from stub integrator).
+            Mat4::from_scale_rotation_translation(Vec3::splat(0.55), Quat::IDENTITY, ball),
             Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.45),
                 Quat::IDENTITY,
@@ -270,6 +333,14 @@ impl DemoApp {
                 Vec3::new(-5.5, 0.9, 2.5),
             ),
         ];
+
+        // Slowly rotating instance of the imported glTF mesh (assets/sample.gltf),
+        // if one was loaded and uploaded in `resumed()`.
+        self.extra_mats = vec![Mat4::from_scale_rotation_translation(
+            Vec3::splat(1.0),
+            Quat::from_rotation_y(t * 0.6),
+            Vec3::new(-3.0, 0.5, 0.0),
+        )];
 
         let sun_dir = Vec3::new(-0.45, -1.0, -0.35).normalize();
         let light_view_proj =
@@ -304,11 +375,21 @@ impl DemoApp {
                 saturation: 1.12,
                 cube_instances: &self.cube_mats,
                 sphere_instances: &self.sphere_mats,
+                extra_instances: &self.extra_mats,
                 skinned_model: Some(char_xform),
                 skin_joints: &skin.joints,
                 hud_verts: &hud,
                 draw_water: true,
+                screenshot_path: shot_path.as_deref(),
             })?;
+            if shot_path.is_some() {
+                self.screenshot_index += 1;
+                self.screenshot_warmup = 0;
+                if self.screenshot_index >= self.screenshot_plan.len() {
+                    info!("version 1 screenshots complete");
+                    self.exit_requested = true;
+                }
+            }
             if let Some(window) = &self.window {
                 window.request_redraw();
             }
@@ -336,9 +417,33 @@ impl ApplicationHandler for DemoApp {
             Ok(window) => {
                 let window = Arc::new(window);
                 match pollster::block_on(SliceRenderer::new(Arc::clone(&window))) {
-                    Ok(renderer) => {
+                    Ok(mut renderer) => {
                         info!("slice renderer ready");
                         self.camera.set_aspect(renderer.size.0, renderer.size.1);
+
+                        let gltf_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                            .join("assets")
+                            .join("sample.gltf");
+                        match shiloh_assets::load_gltf(&gltf_path) {
+                            Ok(doc) => {
+                                if let Some(prim) = doc.primitives.first() {
+                                    let mesh = crate::gltf_gpu::to_slice_mesh(prim);
+                                    renderer.set_extra_mesh(&mesh);
+                                    info!(
+                                        path = %gltf_path.display(),
+                                        vertices = mesh.vertices.len(),
+                                        indices = mesh.indices.len(),
+                                        "uploaded imported glTF mesh to GPU"
+                                    );
+                                } else {
+                                    warn!(path = %gltf_path.display(), "glTF has no primitives");
+                                }
+                            }
+                            Err(err) => {
+                                warn!(?err, path = %gltf_path.display(), "failed to load sample glTF mesh");
+                            }
+                        }
+
                         self.renderer = Some(renderer);
                         self.window = Some(window);
                         self.update_camera();

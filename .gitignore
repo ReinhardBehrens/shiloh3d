@@ -17,6 +17,8 @@
 dist/
 out/
 *.pdb
+.tmp/
+shiloh_project/
 
 # Environment / secrets
 .env

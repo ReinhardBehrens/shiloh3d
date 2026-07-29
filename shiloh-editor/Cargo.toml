@@ -8,7 +8,11 @@ authors.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+ahash.workspace = true
 anyhow.workspace = true
+eframe = { workspace = true, optional = true }
+egui = { workspace = true, optional = true }
+glam.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 shiloh-app = { workspace = true }
@@ -18,6 +22,15 @@ shiloh-ecs = { workspace = true }
 shiloh-scene = { workspace = true }
 thiserror.workspace = true
 tracing.workspace = true
+
+[features]
+default = ["ui"]
+ui = ["dep:egui", "dep:eframe"]
+
+[[bin]]
+name = "shiloh-editor"
+path = "src/bin/shiloh-editor.rs"
+required-features = ["ui"]
 
 [lints]
 workspace = true

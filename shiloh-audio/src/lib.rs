@@ -10,4 +10,4 @@ pub mod mixer;
 pub mod source;
 
 pub use mixer::AudioMixer;
-pub use source::{AudioSource, Listener};
+pub use source::{AudioClip, AudioSource, Listener};

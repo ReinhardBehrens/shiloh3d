@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="logo_shiloh3d.png" alt="Shiloh3D Game Engine" width="280" />
+  <img src="logo_shiloh3d.png" alt="Shiloh3D" width="200" />
 </p>
-
-<h1 align="center">Shiloh3D</h1>
 
 <p align="center">
   <strong>A modern 3D game engine written in Rust — from scratch.</strong><br/>
@@ -43,7 +41,7 @@ Graphics **bootstrap** is wgpu + WGSL; **shipping desktop** targets native Vulka
 |---|---|
 | **Language** | Rust (edition 2024) |
 | **License** | MIT OR Apache-2.0 |
-| **Status** | Early foundation (`0.1.0`) — runtime shell + crate architecture |
+| **Status** | `0.1.0` — Phase 1 runtime done; Phase 2 usable-3D exit met (Blackmarsh bar) |
 | **Math** | [`glam`](https://docs.rs/glam) |
 | **GPU path** | wgpu+WGSL bootstrap behind RHI · native shipping · WebGL/WebGPU — [GRAPHICS](docs/GRAPHICS.md) · [TECH_STACK](docs/TECH_STACK.md) |
 | **Scripting** | Native Rust modules first; embeddable JS / Rhai planned |
@@ -282,22 +280,27 @@ Release profile uses thin LTO and a single codegen unit for ship builds.
 | **[Showcase demo](shiloh-demo/README.md)** | Cross-platform GPU demo (Win / macOS / Linux) |
 | This README | Architecture, modules, build & run |
 
-Screenshots will live under [`docs/screenshots/`](docs/screenshots/) once the editor and renderer produce capturable frames.
+Screenshots live under [`docs/screenshots/`](docs/screenshots/) (placeholders until version captures are checked in).
 
 ---
 
 ## Roadmap
 
-See **[docs/ROADMAP.md](docs/ROADMAP.md)** for the full four-phase plan.
+See **[docs/ROADMAP.md](docs/ROADMAP.md)** for the full four-phase plan and **[docs/QUALITY_BAR.md](docs/QUALITY_BAR.md)** for the Blackmarsh presentation bar (effects, atmosphere, **real water**).
 
-| Phase | Theme | Where we are |
+| Phase | Theme | Status |
 |---|---|---|
-| **1** | Core runtime | **In progress** — window/GPU/demo loop exist; textures, hierarchy systems, full ECS still open |
-| **2** | Usable 3D (vertical slice) | Next — editor + PBR path toward the product thesis |
-| **3** | Production workflow | Later — hot reload, packaging, profiling |
-| **4** | Competitive scale | Last — GPU-driven, GI, consoles, marketplace, … |
+| **1** | Core runtime — engine / world-builder foundation | **Done** — ECS, hierarchy, textured mesh, selectable RHI, app host |
+| **2** | Usable 3D — vertical slice exit | **Done** — PBR/lights/shadows, glTF→GPU, scene JSON, physics+audio one-shot, editor hierarchy/inspector/play, water/fog/HUD v1 |
+| **3** | Production workflow + Blackmarsh FX | **Next** — hot reload, packaging, profiling; **water v2–v3**, height fog, wetness, foliage |
+| **4** | Competitive scale | Later — GPU-driven rendering, streaming, GI, SSR-class water, net at scale, consoles |
 
-**Near-term:** finish Phase 1, then one Phase 2 vertical slice (editor · PBR · world hooks · multiplayer foundations) before broadening scope.
+**Now:** Phase 1–2 exits are met. Deepen toward the Blackmarsh bar (real water + atmosphere) while Phase 3 makes the content loop producible.
+
+```bash
+cargo run -p shiloh-demo      # iso vertical slice
+cargo run -p shiloh-editor    # hierarchy / inspector / play
+```
 
 ---
 

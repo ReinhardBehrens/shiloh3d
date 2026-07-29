@@ -1,0 +1,381 @@
+{
+  "name": "Shiloh3D Showcase",
+  "version": 1,
+  "entities": [
+    {
+      "name": "entity_0",
+      "translation": [
+        0.0,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_1",
+      "translation": [
+        0.5,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_2",
+      "translation": [
+        1.0,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_3",
+      "translation": [
+        1.5,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_4",
+      "translation": [
+        2.0,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_5",
+      "translation": [
+        2.5,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_6",
+      "translation": [
+        3.0,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_7",
+      "translation": [
+        3.5,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_8",
+      "translation": [
+        4.0,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_9",
+      "translation": [
+        4.5,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_10",
+      "translation": [
+        5.0,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_11",
+      "translation": [
+        5.5,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_12",
+      "translation": [
+        6.0,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_13",
+      "translation": [
+        6.5,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_14",
+      "translation": [
+        7.0,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_15",
+      "translation": [
+        7.5,
+        0.25,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": 16
+    },
+    {
+      "name": "entity_16",
+      "translation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": null
+    },
+    {
+      "name": "entity_17",
+      "translation": [
+        0.080000006,
+        2.9019003,
+        0.040000003
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "parent": null
+    }
+  ],
+  "camera": {
+    "projection": "isometric",
+    "eye": [
+      10.392354,
+      10.892205,
+      10.392354
+    ],
+    "target": [
+      0.0,
+      0.5,
+      0.0
+    ],
+    "fov_y_degrees": 35.0,
+    "ortho_half_extent": 12.0
+  }
+}

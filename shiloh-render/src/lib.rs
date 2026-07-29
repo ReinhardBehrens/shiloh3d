@@ -25,6 +25,8 @@ pub use renderer::Renderer;
 #[cfg(feature = "wgpu")]
 pub use gpu::ForwardRenderer;
 #[cfg(feature = "wgpu")]
-pub use mesh::{InstanceRaw, MeshCpu, Vertex};
+pub use mesh::{
+    InstanceRaw, MeshCpu, SkinnedMeshCpu, SkinnedVertex, SliceMeshCpu, SliceVertex, Vertex,
+};
 #[cfg(feature = "wgpu")]
 pub use slice::{HudVertex, SliceDrawParams, SliceRenderer, orthographic_light_matrix};

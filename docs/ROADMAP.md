@@ -80,22 +80,26 @@ Goal: a **vertical slice** — author a scene in the editor, see excellent-enoug
 
 | Item | Status | Notes |
 |---|---|---|
-| PBR materials | **Partial** | Textured forward PBR-ish in `SliceRenderer`; metallic/rough maps later |
-| Directional, point and spot lighting | **Partial** | Directional + 2 points in slice; spots TBD |
-| Shadows | **Partial** | Directional shadow map in slice |
+| PBR materials | **Partial** | Textured forward PBR in `SliceRenderer`; metallic/rough maps later (Blackmarsh wetness) |
+| Directional, point and spot lighting | **Partial** | Directional + 2 points + shadows in slice; spots TBD |
+| Shadows | **Done** | Directional 2048 shadow map in slice |
 | Cameras | **Done** | Perspective / ortho / isometric helpers |
-| glTF import | **Partial** | `load_gltf` + optional demo load; GPU upload of imported meshes TBD |
-| Physics | **Partial** | Backend trait + stub; Rapier (Rust) planned |
-| Audio | **Partial** | Mixer stub; no device output yet |
-| Scene serialization | **Partial** | Shared scene JSON (`save_scene` / `load_scene`); editor UI TBD |
-| Basic editor | **Partial** | Project files + selection model; no viewport UI |
+| glTF import | **Done** | `load_gltf` → `set_extra_mesh` GPU path; `assets/sample.gltf` in demo |
+| Physics | **Partial** | Stub integrator moves `RigidBody.position` → demo syncs `Transform`; Rapier later |
+| Audio | **Partial** | Software mixer one-shot (`AudioClip` + `play_oneshot`); device backend later |
+| Scene serialization | **Done** | Shared scene JSON; parent links round-trip |
+| Basic editor | **Partial** | `shiloh-editor` hierarchy / inspector / play mode; 3D viewport still demo-owned |
 
 **Phase 2 exit criteria**
 
-- [ ] Load a glTF mesh onto the GPU and render with PBR + directional light + shadows *(importer + slice lighting/shadows done; procedural skinned mesh in demo until `sample.glb` GPU path)*  
+- [x] Load a glTF mesh onto the GPU and render with PBR + directional light + shadows  
 - [x] Save/load a scene JSON the editor and runtime share  
-- [ ] Physics bodies move entities; audio plays a one-shot  
-- [ ] Editor: hierarchy, inspector, play mode  
+- [x] Physics bodies move entities; audio plays a one-shot *(stub physics + software mix; Rapier/cpal later)*  
+- [x] Editor: hierarchy, inspector, play mode *(`cargo run -p shiloh-editor`)* — embedded wgpu viewport remains a polish gap, not an exit blocker  
+
+**Phase 1 (world builder / engine foundation) — locked**
+
+Runtime shell that world-building tools stand on: ECS, hierarchy/`GlobalTransform`, scene JSON, selectable RHI, textured mesh path, app window host. Editor and content tools consume these façades; they do not re-implement them.
 
 ---
 
@@ -156,7 +160,13 @@ flowchart LR
 
 ## Current focus
 
-**Finish Phase 1, then a Phase 2 vertical slice** aimed at the north star (editor · PBR · world foundations · multiplayer) — not a kitchen-sink engine.
+**Phase 2 vertical slice exit criteria are met.**
+
+**Next presentation track (user-confirmed):** Blackmarsh-class **effects, atmosphere, and real water** — see [QUALITY_BAR.md](QUALITY_BAR.md). Order: water v2 (depth + planar reflection) → height fog / torch pools → foot ripples (v3) → wetness + foliage.
+
+In parallel: Phase 3 production workflow (hot reload, packaging, profiling) so content can ship while water/FX deepen.
+
+**Quality target:** [QUALITY_BAR.md](QUALITY_BAR.md) — effects, atmosphere, and **real water** matching the swamp combat reference.
 
 The showcase proves window + GPU + loop + input + timing + mesh lighting + crate wiring. Gaps that block calling Phase 1 “done”: textures, hierarchy systems, complete ECS, and folding the windowed host into `shiloh-app`.
 

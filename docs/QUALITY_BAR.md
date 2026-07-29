@@ -3,7 +3,9 @@
 **Reference:** isometric dark-fantasy ARPG combat in a swamp (“Blackmarsh / The Lions Gate”).  
 Asset: [`references/quality-bar-arpg-swamp.png`](references/quality-bar-arpg-swamp.png)
 
-This is roughly **Diablo IV / Path of Exile–class presentation**: dense foliage, wet PBR materials, multi-light night scene, reflective water, skinned combatants, ornate HUD. It is a **credible long-term graphics + content bar** for Shiloh3D’s “excellent PBR + large-world” thesis — **not** a Phase 1 target.
+> **Confirmed north star (user):** this shot is the target for **effects, atmosphere, and real water** — not a soft “nice to have.” Graphics work is judged against this mood and water fidelity.
+
+This is roughly **Diablo IV / Path of Exile–class presentation**: dense foliage, wet PBR materials, multi-light night scene, **interactive reflective water**, skinned combatants, ornate HUD. It is a **credible long-term graphics + content bar** for Shiloh3D’s “excellent PBR + large-world” thesis.
 
 ```mermaid
 flowchart TB
@@ -13,7 +15,7 @@ flowchart TB
     CAM[Isometric / orbit camera]
     SKIN[Skinned meshes + anim]
     GLTF[glTF / textured assets]
-    WATER[Water + wetness]
+    WATER[Real water]
     FOG[Atmosphere / fog]
     UI[Game HUD layer]
   end
@@ -38,6 +40,28 @@ flowchart TB
 
 ---
 
+## Real water (explicit bar from the shot)
+
+Today’s slice has **water v1** (flat tinted plane + animated normals + fresnel). The reference requires **water that reads as a volume characters stand in**:
+
+| Cue in the shot | Engine requirement | Status |
+|---|---|---|
+| Knee-deep murky brown water | Depth-based tint / absorption; partial submersion of legs | 🔄 v1 tint only |
+| Circular ripples & wakes at feet | Interaction FX (CPU/GPU ripples or decals) driven by movers | ⬜ |
+| Reflections of arch, torches, trees | Planar reflection **or** SSR on water; torch bloom in reflection | ⬜ |
+| Lily pads / reeds on surface | Instanced foliage with depth/alpha sort over water | ⬜ |
+| Torch orange on wet stone + water | Multi point lights + specular on wet materials | 🔄 lights exist; wetness map ⬜ |
+
+**Water roadmap (ordered):**
+
+1. **v2 — believable swamp plane:** refraction/depth fog color, sharper normals, soft shore foam, cheap planar reflection of a low-res scene color  
+2. **v3 — interaction:** foot/character ripple rings + wake trails  
+3. **v4 — Blackmarsh-class:** SSR or high-quality planar, wetness on nearby materials, particle splashes  
+
+Atmosphere tied to the same shot: **height/distance fog that thickens with depth**, warm torch pools vs cool ambient, optional cheap volumetrics later — not a flat gray clear.
+
+---
+
 ## What the shot is doing (systems read)
 
 | Visual cue in the shot | Engine system required |
@@ -45,16 +69,16 @@ flowchart TB
 | Wet plate armor, slimy creature skin, rough stone | **PBR** (albedo/metal/rough/normal; wetness or clearcoat) |
 | Cool moonlight + warm torch pools | **Directional + point lights**, different colors/intensities |
 | Characters grounded in mud/water | **Shadows** (cascaded or atlas) + contact grounding |
-| Murky water, character reflections, foot ripples | **Water material** (depth tint, normals, cheap reflections) + **interaction FX** |
-| Mist between trees | **Height fog / volumetric-ish atmosphere** (full raymarch later) |
+| Murky water, reflections, foot ripples | **Real water** (depth tint, normals, reflections) + **interaction FX** |
+| Mist between trees | **Height fog / volumetric-ish atmosphere** |
 | Dense reeds, pads, moss | **Instanced foliage** + alpha/alpha-to-coverage; LODs |
 | Carved arch, gnarled trunks | **High-detail meshes** + normal maps; glTF pipeline |
-| Player + “Swamp Stalker”-class enemies | **Skeletal animation**, blend/state machine, multiple skinned draws |
-| Health/mana globes, hotbar, minimap, quest log | **Screen-space UI** (egui or custom) + world→UI projection for minimap |
-| Named region on map | **Large-world** data (streaming / partitions) — not just one mesh dump |
+| Player + swamp stalkers | **Skeletal animation**, blend/state machine, multiple skinned draws |
+| Health/mana globes, hotbar, minimap, quest log | **Screen-space UI** + world→UI projection for minimap |
+| Named region on map | **Large-world** data (streaming / partitions) |
 | Splash at feet | **Particles / decals** tied to movement + water |
 
-Camera: **high isometric / top-down** (not free FPS). Needs a first-class **ortho or constrained perspective** camera mode, not only free look.
+Camera: **high isometric / top-down** (not free FPS). First-class **ortho or constrained perspective** camera mode.
 
 ---
 
@@ -62,30 +86,30 @@ Camera: **high isometric / top-down** (not free FPS). Needs a first-class **orth
 
 ### Must-have (without these, the scene cannot read as this genre)
 
-1. Textured **PBR** mesh pass (not only vertex-color Blinn-Phong)  
-2. **glTF** (or equivalent) import: meshes, materials, skins, animations  
+1. Textured **PBR** mesh pass  
+2. **glTF** import: meshes, materials, skins, animations  
 3. **Directional + several point lights** with **shadows**  
 4. **Skinned animation** playback  
-5. **Isometric/ARPG camera** + depth-correct transparent sorting for foliage/UI  
-6. Basic **HDR + tonemap + color grade** (the “gloom” look is grading as much as lighting)  
-7. **HUD** pass composited over the 3D view  
+5. **Isometric/ARPG camera** + depth-correct transparent sorting  
+6. Basic **HDR + tonemap + color grade**  
+7. **HUD** pass over the 3D view  
+8. **Real water path** (at least v2 depth + reflection + interaction plan) — user-confirmed  
 
 ### Should-have (makes Blackmarsh believable)
 
-8. **Water** (plane or mesh): depth fog color, animated normals, SSR *or* planar reflection  
-9. **Wetness** control (material parameter or deferred wet mask)  
-10. **Exponential / height fog** (full volumetrics optional)  
+9. **Wetness** on materials near water  
+10. **Height fog** (volumetrics optional after)  
 11. **GPU instancing** for props/foliage  
 12. **Particle** splashes / torch fire  
-13. **Audio**: spatial ambience + footstep/water (supports the mood even if not visible)  
+13. **Audio**: spatial ambience + footstep/water  
 
-### Later / competitive (Phase 3–4 — do not block the vertical slice)
+### Later / competitive (do not block content loop)
 
 14. True **volumetric lighting**, high-end **GI**  
-15. **World partitioning / streaming** for continent-scale maps  
-16. **GPU-driven** foliage / occlusion culling  
-17. Fancy HUD fluid shaders inside orbs (can fake with flipbooks first)  
-18. Web parity at this fidelity (likely reduced: fewer lights, simpler water)
+15. **World partitioning / streaming**  
+16. **GPU-driven** foliage / occlusion  
+17. Fancy HUD orb shaders  
+18. Web parity at this fidelity (reduced lights/water)
 
 ---
 
@@ -93,16 +117,18 @@ Camera: **high isometric / top-down** (not free FPS). Needs a first-class **orth
 
 | Phase | What to deliver toward this bar |
 |---|---|
-| **1 — Core runtime** | Window, RHI, loop, input, ECS, handles, textured mesh (even one albedo) |
-| **2 — Usable 3D (vertical slice)** | PBR, lights, shadows, cameras (incl. iso), glTF, skinned anim, scene save, **basic HUD**, water v1, fog v1 — *one playable swamp encounter* |
-| **3 — Production** | Prefabs, hot reload, material editor, anim state machines, packing, Tracy; foliage tools; better water/FX |
-| **4 — Competitive** | GPU-driven, occlusion, streaming GI strategy, large-world partition, net replication at scale |
+| **1 — Core runtime** | ✅ Window, RHI, loop, ECS, hierarchy, textured mesh |
+| **2 — Usable 3D (vertical slice)** | ✅ PBR path, lights/shadows, iso, glTF→GPU, skinned, HUD, fog v1, **water v1**, editor H/I/play, physics+audio one-shot |
+| **3 — Production + Blackmarsh water/FX** | Water v2–v3, wetness, foliage tools, particles, better fog; hot reload, packing, Tracy |
+| **4 — Competitive** | SSR-class water, volumetrics, GPU-driven, streaming, GI strategy |
 
-**Vertical slice definition for this bar**
+**Next graphics focus (post Phase 2 exit):** water v2 (depth + planar reflection) and atmosphere (height fog + torch pools), then ripple interaction — so the swamp reads like the reference, not a tinted quad.
 
-> One streamed-or-single swamp tile, glTF player + 3–6 enemies, PBR + 1 directional + 2 torches + shadows, reflective water v1, fog, isometric camera, skill hotbar HUD, 60 FPS on a mid-range desktop (wgpu bootstrap).
+**Vertical slice already proven**
 
-That proves the product thesis without waiting for Phase 4 GI.
+> Iso swamp-like demo tile, PBR + sun + points + shadows, water v1, fog, skinned character, HUD, glTF mesh, 60 FPS path on mid-range desktop.
+
+Deepening water/atmosphere is the bridge from “usable 3D” to “Blackmarsh-class presentation.”
 
 ---
 
@@ -118,11 +144,11 @@ That proves the product thesis without waiting for Phase 4 GI.
 | Normal / ORM / emissive maps | P0 | From glTF |
 | Skinning on GPU | P0 | Joint matrices UBO/SSBO |
 | Transparent pass + sort | P0 | Foliage, water, VFX |
-| Water pass | P1 | Separate shader; ripple from CPU/GPU |
-| Fog / atmosphere | P1 | Height fog first |
+| Water pass (real) | P0 | v2 depth+planar; v3 ripples; v4 SSR-class |
+| Fog / atmosphere | P0 | Height fog first; volumetrics later |
 | Post stack | P1 | Tonemap, grade, bloom, SSAO (SSAO can wait) |
 | Instancing | P1 | Already started in demo — extend to foliage |
-| Decals / particles | P2 | Splashes, torch |
+| Decals / particles | P1 | Splashes, torch, water wakes |
 
 ### Content pipeline (`shiloh-assets`)
 
@@ -153,60 +179,20 @@ That proves the product thesis without waiting for Phase 4 GI.
 
 | Feature | Priority |
 |---|---|
-| egui or custom immediate HUD | P0 for slice |
-| Minimap (render-to-texture or 2D) | P1 |
-| Ornate frames = textures, not SDF art yet | P2 |
+| Hotbar + resource orbs | P0 (slice) |
+| Minimap + quest tracker | P1 |
+| Editor hierarchy / inspector / play | P0 (landed) |
 
-### World scale (`shiloh-scene` / future streaming)
+---
 
-| Feature | Priority |
+## Honest gap vs the shot (today)
+
+| Reference | Shiloh now |
 |---|---|
-| Tile / cell IDs, load bounds | P2 (design now, implement when one tile works) |
-| Streaming + HLOD | P3 / Phase 4 |
+| Murky reflective interactive water | Flat fresnel plane (v1) |
+| Thick mist between trees | Distance fog only |
+| Torch pools + wet stone | Points + sun; no wetness |
+| Dense foliage / lily pads | Procedural cubes/spheres + one glTF cube |
+| Ornate ARPG HUD | Simple NDC bars/hotbar |
 
-### Multiplayer (`shiloh-network`)
-
-Not visible in a still, but ARPG combat implies **replication of transforms, anim state, HP** — keep net types first-class; don’t block the single-player visual slice on full netcode.
-
----
-
-## Performance budget (desktop target for this density)
-
-Rough guide for a mid GPU (e.g. GTX 1650–class and up):
-
-| Budget | Guidance |
-|---|---|
-| Main view | 1920×1080, 60 FPS |
-| Opaque draws | Instanced props; &lt; few hundred unique skinned characters on screen |
-| Lights with shadows | 1 directional + ≤4 local shadows first |
-| Transparent | Heavy — budget foliage cards carefully |
-| Post | Keep stack short until CPU/GPU timers say otherwise |
-
-Use **Tracy + GPU timestamps** before adding volumetrics or GI.
-
----
-
-## What we have vs the bar (0.1.0)
-
-| Capability | Now | Gap to reference |
-|---|---|---|
-| Lit mesh | Vertex-color Blinn-Phong instancing | Full PBR textures |
-| Camera | Free orbit | Iso/ARPG camera mode |
-| Assets | Procedural cube/sphere | glTF characters/env |
-| Lights / shadows | 1 fake directional in UBO | Real multi-light + shadows |
-| Water / fog / post | None | Required for swamp read |
-| Skinning / anim GPU | Types only | Full path |
-| HUD | None | Full ARPG chrome |
-| World streaming | None | After slice |
-
----
-
-## Recommendation
-
-Treat this image as the **Phase 2–3 quality north star for “selected graphical capabilities”**, not as a checklist for Phase 1.
-
-1. Finish Phase 1 (textures, ECS, hierarchy, app-owned window).  
-2. Build the **Blackmarsh vertical slice** (table above) on **wgpu + WGSL** behind Shiloh façades.  
-3. Only then invest in volumetrics, GI, and world partitioning.  
-
-That matches the product thesis: *usable editor + excellent PBR + large-world foundations + multiplayer* — proven on one swamp fight before expanding.
+Phase 2 made the **usable engine path**. Closing this table is the **Blackmarsh presentation track** (start: water v2 + height fog).

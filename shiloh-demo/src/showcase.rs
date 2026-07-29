@@ -1,12 +1,13 @@
 //! Boots and ticks every Shiloh subsystem for the showcase.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use shiloh_animation::{AnimState, AnimStateMachine, AnimationClip, BlendTree, Skeleton};
 use shiloh_assets::{AssetCache, AssetPackage};
-use shiloh_audio::{AudioMixer, AudioSource, Listener};
+use shiloh_audio::{AudioClip, AudioMixer, AudioSource, Listener};
 use shiloh_core::{EngineConfig, JobSystem};
-use shiloh_ecs::World;
+use shiloh_ecs::{Entity, World};
 use shiloh_editor::Project;
 use shiloh_input::InputState;
 use shiloh_network::{InMemoryTransport, Packet, ReplicationChannel, Transport};
@@ -53,6 +54,10 @@ pub struct ShowcaseState {
     cube_count: usize,
     net_ticks: u64,
     pub gltf_prims: usize,
+    physics_body_id: usize,
+    physics_entity: Entity,
+    beep_clip: Arc<AudioClip>,
+    audio_logged: bool,
 }
 
 impl ShowcaseState {
@@ -74,11 +79,18 @@ impl ShowcaseState {
         propagate_transforms(&mut scene.world);
 
         let mut physics_backend = StubPhysics::new();
-        physics_backend.add_body(RigidBody {
+        let physics_body_id = physics_backend.add_body(RigidBody {
             kind: RigidBodyKind::Dynamic,
+            position: glam::Vec3::new(0.0, 3.0, 0.0),
+            linear_velocity: glam::Vec3::new(0.6, 0.0, 0.3),
             ..Default::default()
         });
         let physics = PhysicsWorld::new(physics_backend);
+
+        // Entity whose Transform tracks the dynamic body each fixed step (Phase 2
+        // physics→Transform sync; shiloh-physics stays free of shiloh-scene).
+        let physics_entity =
+            scene.spawn_transform(Transform::from_translation(glam::Vec3::new(0.0, 3.0, 0.0)));
 
         let mut blend = BlendTree::default();
         let clip_idx = blend.add_clip(AnimationClip {
@@ -102,6 +114,11 @@ impl ShowcaseState {
             ..Default::default()
         });
 
+        // Boot-time one-shot: proves the software mixer actually renders samples
+        // (exit criterion: non-silent mix buffer), not just silence.
+        let beep_clip = Arc::new(AudioClip::sine_beep(48_000, 880.0, 0.15, 0.3));
+        audio.play_oneshot(Arc::clone(&beep_clip), 0.3);
+
         let mut scripts = ScriptRegistry::new();
         scripts.register(ShowcaseScript { pulses: 0 });
 
@@ -121,11 +138,18 @@ impl ShowcaseState {
         let pkg_path = asset_dir.join("package.json");
         std::fs::write(&pkg_path, serde_json::to_string_pretty(&pkg)?)?;
 
-        // Optional glTF smoke-load (place sample.glb under demo assets/).
+        // Optional glTF smoke-load (sample.gltf / sample.glb under demo assets/).
         let mut gltf_prims = 0usize;
-        let gltf_path = asset_dir.join("sample.glb");
-        if gltf_path.exists() {
-            match shiloh_assets::load_gltf(&gltf_path) {
+        let gltf_candidates = [
+            asset_dir.join("sample.gltf"),
+            asset_dir.join("sample.glb"),
+        ];
+        let mut loaded_gltf = false;
+        for gltf_path in &gltf_candidates {
+            if !gltf_path.exists() {
+                continue;
+            }
+            match shiloh_assets::load_gltf(gltf_path) {
                 Ok(doc) => {
                     gltf_prims = doc.primitives.len();
                     info!(
@@ -134,14 +158,14 @@ impl ShowcaseState {
                         skinned = doc.skin.is_some(),
                         "loaded glTF"
                     );
+                    loaded_gltf = true;
+                    break;
                 }
-                Err(err) => warn!(?err, "glTF load failed"),
+                Err(err) => warn!(?err, path = %gltf_path.display(), "glTF load failed"),
             }
-        } else {
-            debug!(
-                path = %gltf_path.display(),
-                "no sample.glb — using procedural skinned mesh in renderer"
-            );
+        }
+        if !loaded_gltf {
+            debug!("no sample.gltf/glb — procedural skinned mesh remains the fallback");
         }
 
         let project_dir = asset_dir.join("demo_project");
@@ -171,11 +195,25 @@ impl ShowcaseState {
             cube_count: cubes as usize,
             net_ticks: 0,
             gltf_prims,
+            physics_body_id,
+            physics_entity,
+            beep_clip,
+            audio_logged: false,
         })
     }
 
     pub fn cube_count(&self) -> usize {
         self.cube_count
+    }
+
+    /// World position of the dynamic physics ball (for visual instance sync).
+    pub fn physics_ball_position(&self) -> glam::Vec3 {
+        self.physics
+            .backend
+            .bodies()
+            .get(self.physics_body_id)
+            .map(|b| b.position)
+            .unwrap_or(glam::Vec3::Y * 3.0)
     }
 
     pub fn tick(
@@ -190,6 +228,22 @@ impl ShowcaseState {
             self.physics.step(1.0 / 60.0);
         }
 
+        // Phase 2 physics→Transform sync: copy the dynamic body's position into
+        // its tracked scene entity each fixed step (shiloh-physics has no
+        // knowledge of Transform, so the copy happens here in the demo).
+        let physics_pos = self
+            .physics
+            .backend_mut()
+            .bodies()
+            .get(self.physics_body_id)
+            .map(|b| b.position);
+        if let Some(position) = physics_pos
+            && let Some(transform) = self.scene.world.get_mut::<Transform>(self.physics_entity)
+        {
+            transform.translation = position;
+            transform.mark_dirty();
+        }
+
         let barrier = jobs.spawn_batch((0..4u32).map(|i| {
             move || {
                 let _ = i.wrapping_mul(7);
@@ -199,6 +253,14 @@ impl ShowcaseState {
 
         let mut mix = [0.0f32; 256];
         self.audio.mix(&mut mix);
+        if !self.audio_logged {
+            let peak = mix.iter().fold(0.0f32, |acc, s| acc.max(s.abs()));
+            if peak > 1e-6 {
+                info!(peak, "audio oneshot mixed");
+                self.audio_logged = true;
+            }
+        }
+        let _ = &self.beep_clip;
 
         let _ = self.anim.current;
         let _ = self.blend.clips.len();

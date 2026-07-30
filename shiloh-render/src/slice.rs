@@ -31,6 +31,12 @@ struct FrameUniform {
     point0_color: [f32; 4],
     point1_pos_range: [f32; 4],
     point1_color: [f32; 4],
+    /// Spot: xyz position, w = range.
+    spot_pos_range: [f32; 4],
+    /// Spot: xyz direction, w = cos(outer cone).
+    spot_dir_cos: [f32; 4],
+    /// Spot: rgb intensity, w = cos(inner cone).
+    spot_color: [f32; 4],
     params: [f32; 4],
 }
 
@@ -88,6 +94,12 @@ pub struct SliceDrawParams<'a> {
     pub point1_pos: Vec3,
     pub point1_range: f32,
     pub point1_color: Vec3,
+    pub spot_pos: Vec3,
+    pub spot_range: f32,
+    pub spot_dir: Vec3,
+    pub spot_inner_cos: f32,
+    pub spot_outer_cos: f32,
+    pub spot_color: Vec3,
     pub exposure: f32,
     pub contrast: f32,
     pub saturation: f32,
@@ -844,6 +856,24 @@ impl SliceRenderer {
                 params.point1_color.y,
                 params.point1_color.z,
                 1.0,
+            ],
+            spot_pos_range: [
+                params.spot_pos.x,
+                params.spot_pos.y,
+                params.spot_pos.z,
+                params.spot_range,
+            ],
+            spot_dir_cos: [
+                params.spot_dir.x,
+                params.spot_dir.y,
+                params.spot_dir.z,
+                params.spot_outer_cos,
+            ],
+            spot_color: [
+                params.spot_color.x,
+                params.spot_color.y,
+                params.spot_color.z,
+                params.spot_inner_cos,
             ],
             params: [
                 params.time,

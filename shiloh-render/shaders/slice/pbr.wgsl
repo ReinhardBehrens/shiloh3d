@@ -12,6 +12,9 @@ struct FrameUniform {
     point0_color: vec4<f32>,
     point1_pos_range: vec4<f32>,
     point1_color: vec4<f32>,
+    spot_pos_range: vec4<f32>,
+    spot_dir_cos: vec4<f32>,
+    spot_color: vec4<f32>,
     params: vec4<f32>,       // x=time, y=exposure, z=grade_contrast, w=grade_sat
 }
 
@@ -77,6 +80,29 @@ fn point_light(world: vec3<f32>, n: vec3<f32>, albedo: vec3<f32>, pos_range: vec
     return albedo * col.xyz * ndotl * atten2;
 }
 
+fn spot_light(
+    world: vec3<f32>,
+    n: vec3<f32>,
+    albedo: vec3<f32>,
+    pos_range: vec4<f32>,
+    dir_cos: vec4<f32>,
+    col: vec4<f32>,
+) -> vec3<f32> {
+    let to_l = pos_range.xyz - world;
+    let dist = length(to_l);
+    let range = max(pos_range.w, 0.01);
+    let atten = saturate(1.0 - dist / range);
+    let atten2 = atten * atten;
+    let l = normalize(to_l);
+    let spot_dir = normalize(dir_cos.xyz);
+    let cos_outer = dir_cos.w;
+    let cos_inner = col.w;
+    let cos_angle = dot(-l, spot_dir);
+    let cone = saturate((cos_angle - cos_outer) / max(cos_inner - cos_outer, 1e-4));
+    let ndotl = max(dot(n, l), 0.0);
+    return albedo * col.xyz * ndotl * atten2 * cone * cone;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let n = normalize(in.world_n);
@@ -95,6 +121,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     rgb += frame.sun_color.xyz * spec * sh;
     rgb += point_light(in.world_pos, n, albedo, frame.point0_pos_range, frame.point0_color);
     rgb += point_light(in.world_pos, n, albedo, frame.point1_pos_range, frame.point1_color);
+    rgb += spot_light(
+        in.world_pos,
+        n,
+        albedo,
+        frame.spot_pos_range,
+        frame.spot_dir_cos,
+        frame.spot_color,
+    );
 
     let dist = distance(frame.camera_pos.xyz, in.world_pos);
     let fog_f = 1.0 - exp(-frame.fog.w * dist);

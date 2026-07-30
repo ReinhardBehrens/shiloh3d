@@ -2,7 +2,7 @@
 
 use glam::Mat4;
 
-use crate::skeleton::Skeleton;
+use crate::skeleton::{Pose, Skeleton};
 
 /// Flat joint palette for GPU skinning (`mat4` per joint).
 #[derive(Clone, Debug, Default)]
@@ -39,6 +39,32 @@ impl SkinPalette {
             })
             .collect();
         Self { joints }
+    }
+
+    /// Evaluate a local TRS pose against a skeleton (uses bind inverse = identity
+    /// when `inverse_bind` is empty — fine for procedural demo skins).
+    pub fn from_pose(pose: &Pose, skeleton: &Skeleton, inverse_bind: &[Mat4]) -> Self {
+        let n = skeleton.joint_count().max(pose.translations.len());
+        let mut locals = vec![Mat4::IDENTITY; n];
+        for i in 0..n {
+            let t = pose.translations.get(i).copied().unwrap_or(glam::Vec3::ZERO);
+            let r = pose
+                .rotations
+                .get(i)
+                .copied()
+                .unwrap_or(glam::Quat::IDENTITY);
+            let s = pose.scales.get(i).copied().unwrap_or(glam::Vec3::ONE);
+            locals[i] = Mat4::from_scale_rotation_translation(s, r, t);
+        }
+        let parents: Vec<Option<u16>> = (0..n)
+            .map(|i| skeleton.joints.get(i).and_then(|j| j.parent))
+            .collect();
+        let ib = if inverse_bind.is_empty() {
+            vec![Mat4::IDENTITY; n]
+        } else {
+            inverse_bind.to_vec()
+        };
+        Self::from_locals(&locals, &parents, &ib)
     }
 
     /// Simple two-bone sway for demos without clips.

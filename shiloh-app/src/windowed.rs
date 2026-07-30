@@ -104,6 +104,36 @@ impl ApplicationHandler for WindowHost {
     ) {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let Some(app) = self.app.as_mut()
+                    && let winit::keyboard::PhysicalKey::Code(code) = event.physical_key
+                {
+                    let key = crate::winit_map::map_key(code);
+                    if event.state == winit::event::ElementState::Pressed {
+                        app.input.key_down(key);
+                    } else {
+                        app.input.key_up(key);
+                    }
+                }
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                if let Some(app) = self.app.as_mut() {
+                    let btn = crate::winit_map::map_mouse(button);
+                    if state == winit::event::ElementState::Pressed {
+                        app.input.mouse_down(btn);
+                    } else {
+                        app.input.mouse_up(btn);
+                    }
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                if let Some(app) = self.app.as_mut() {
+                    app.input.set_mouse_position(glam::Vec2::new(
+                        position.x as f32,
+                        position.y as f32,
+                    ));
+                }
+            }
             WindowEvent::RedrawRequested => {
                 if let Some(app) = self.app.as_mut() {
                     if let Err(err) = app.tick_once() {

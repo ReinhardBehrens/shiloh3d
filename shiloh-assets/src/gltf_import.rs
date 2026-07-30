@@ -3,6 +3,9 @@
 use std::path::Path;
 
 use glam::{Mat4, Quat, Vec3, Vec4};
+use shiloh_animation::{
+    AnimationClip, Joint, JointTracks, QuatTrack, Skeleton, Vec3Track,
+};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -51,6 +54,44 @@ pub struct ImportedSkin {
     pub inverse_bind: Vec<Mat4>,
     pub joint_parents: Vec<Option<u16>>,
     pub joint_local: Vec<Mat4>,
+    pub joint_names: Vec<String>,
+}
+
+impl ImportedSkin {
+    pub fn to_skeleton(&self) -> Skeleton {
+        let joints = self
+            .joint_local
+            .iter()
+            .enumerate()
+            .map(|(i, bind_local)| Joint {
+                name: self
+                    .joint_names
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| format!("joint_{i}")),
+                parent: self.joint_parents.get(i).copied().flatten(),
+                bind_local: *bind_local,
+            })
+            .collect();
+        Skeleton { joints }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ImportedAnimation {
+    pub name: String,
+    pub duration: f32,
+    pub tracks: Vec<JointTracks>,
+}
+
+impl ImportedAnimation {
+    pub fn to_clip(&self) -> AnimationClip {
+        AnimationClip {
+            name: self.name.clone(),
+            duration: self.duration,
+            tracks: self.tracks.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -58,9 +99,10 @@ pub struct ImportedGltf {
     pub name: String,
     pub primitives: Vec<ImportedPrimitive>,
     pub skin: Option<ImportedSkin>,
+    pub animations: Vec<ImportedAnimation>,
 }
 
-/// Loads the first mesh (and optional skin) from a `.gltf` / `.glb` file.
+/// Loads the first mesh (and optional skin + animations) from a `.gltf` / `.glb`.
 pub fn load_gltf(path: impl AsRef<Path>) -> Result<ImportedGltf, GltfError> {
     #[cfg(not(feature = "gltf"))]
     {
@@ -86,9 +128,11 @@ fn load_gltf_inner(path: &Path) -> Result<ImportedGltf, GltfError> {
         name,
         primitives: Vec::new(),
         skin: None,
+        animations: Vec::new(),
     };
 
     // Optional first skin.
+    let mut joint_node_indices: Vec<usize> = Vec::new();
     if let Some(skin) = document.skins().next() {
         let mut inverse_bind = Vec::new();
         let reader = skin.reader(|b| Some(&buffers[b.index()]));
@@ -98,9 +142,12 @@ fn load_gltf_inner(path: &Path) -> Result<ImportedGltf, GltfError> {
             }
         }
         let joints: Vec<_> = skin.joints().collect();
+        joint_node_indices = joints.iter().map(|n| n.index()).collect();
         let mut joint_parents = vec![None; joints.len()];
         let mut joint_local = vec![Mat4::IDENTITY; joints.len()];
+        let mut joint_names = Vec::with_capacity(joints.len());
         for (ji, node) in joints.iter().enumerate() {
+            joint_names.push(node.name().unwrap_or("joint").to_string());
             let t = node.transform().decomposed();
             let (trans, rot, scale) = t;
             joint_local[ji] = Mat4::from_scale_rotation_translation(
@@ -121,6 +168,7 @@ fn load_gltf_inner(path: &Path) -> Result<ImportedGltf, GltfError> {
             inverse_bind,
             joint_parents,
             joint_local,
+            joint_names,
         });
     }
 
@@ -181,11 +229,7 @@ fn load_gltf_inner(path: &Path) -> Result<ImportedGltf, GltfError> {
             material.roughness = pbr.roughness_factor();
             if let Some(tex) = pbr.base_color_texture() {
                 let image = &images[tex.texture().source().index()];
-                material.albedo_rgba = Some((
-                    image.width,
-                    image.height,
-                    image.pixels.clone(),
-                ));
+                material.albedo_rgba = Some((image.width, image.height, image.pixels.clone()));
             }
 
             let vertices: Vec<ImportedVertex> = positions
@@ -210,9 +254,113 @@ fn load_gltf_inner(path: &Path) -> Result<ImportedGltf, GltfError> {
         }
     }
 
+    // Animations → ImportedAnimation / AnimationClip tracks (joint index via skin).
+    for anim in document.animations() {
+        let mut duration = 0.0_f32;
+        let mut by_joint: ahash::AHashMap<u16, JointTracks> = ahash::AHashMap::default();
+        for channel in anim.channels() {
+            let target = channel.target();
+            let node_idx = target.node().index();
+            let Some(joint) = joint_node_indices
+                .iter()
+                .position(|&i| i == node_idx)
+                .map(|i| i as u16)
+            else {
+                // Animation targets a non-skin node — skip for skinned path.
+                continue;
+            };
+            let reader = channel.reader(|b| Some(&buffers[b.index()]));
+            let Some(inputs) = reader.read_inputs() else {
+                continue;
+            };
+            let times: Vec<f32> = inputs.collect();
+            if let Some(&last) = times.last() {
+                duration = duration.max(last);
+            }
+            let entry = by_joint.entry(joint).or_insert_with(|| JointTracks {
+                joint,
+                translation: None,
+                rotation: None,
+                scale: None,
+            });
+            match target.property() {
+                gltf::animation::Property::Translation => {
+                    if let Some(outputs) = reader.read_outputs()
+                        && let gltf::animation::util::ReadOutputs::Translations(iter) = outputs
+                    {
+                        let values: Vec<Vec3> = iter.map(Vec3::from).collect();
+                        entry.translation = Some(Vec3Track { times: times.clone(), values });
+                    }
+                }
+                gltf::animation::Property::Rotation => {
+                    if let Some(outputs) = reader.read_outputs()
+                        && let gltf::animation::util::ReadOutputs::Rotations(rots) = outputs
+                    {
+                        let values: Vec<Quat> = rots
+                            .into_f32()
+                            .map(|q| Quat::from_xyzw(q[0], q[1], q[2], q[3]))
+                            .collect();
+                        entry.rotation = Some(QuatTrack { times: times.clone(), values });
+                    }
+                }
+                gltf::animation::Property::Scale => {
+                    if let Some(outputs) = reader.read_outputs()
+                        && let gltf::animation::util::ReadOutputs::Scales(iter) = outputs
+                    {
+                        let values: Vec<Vec3> = iter.map(Vec3::from).collect();
+                        entry.scale = Some(Vec3Track { times: times.clone(), values });
+                    }
+                }
+                gltf::animation::Property::MorphTargetWeights => {}
+            }
+        }
+        if !by_joint.is_empty() {
+            out.animations.push(ImportedAnimation {
+                name: anim.name().unwrap_or("anim").to_string(),
+                duration,
+                tracks: by_joint.into_values().collect(),
+            });
+        }
+    }
+
     if out.primitives.is_empty() {
         return Err(GltfError::Message("no mesh primitives in glTF".into()));
     }
-    let _ = Vec4::ZERO; // keep glam Vec4 import useful for future
+    let _ = Vec4::ZERO;
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shiloh_animation::SkinPalette;
+
+    #[test]
+    fn skin_to_palette_from_bind_pose() {
+        let skin = ImportedSkin {
+            inverse_bind: vec![Mat4::IDENTITY; 2],
+            joint_parents: vec![None, Some(0)],
+            joint_local: vec![Mat4::IDENTITY, Mat4::from_translation(Vec3::Y)],
+            joint_names: vec!["root".into(), "child".into()],
+        };
+        let skeleton = skin.to_skeleton();
+        let clip = AnimationClip {
+            name: "t".into(),
+            duration: 1.0,
+            tracks: vec![JointTracks {
+                joint: 1,
+                translation: Some(Vec3Track {
+                    times: vec![0.0, 1.0],
+                    values: vec![Vec3::Y, Vec3::new(0.0, 2.0, 0.0)],
+                }),
+                rotation: None,
+                scale: None,
+            }],
+        };
+        let pose = clip.sample_pose(&skeleton, 0.5);
+        let palette = SkinPalette::from_pose(&pose, &skeleton, &skin.inverse_bind);
+        assert_eq!(palette.joints.len(), 2);
+        // Mid-clip child local y ≈ 1.5 → world not identity.
+        assert!(palette.joints[1] != Mat4::IDENTITY);
+    }
 }

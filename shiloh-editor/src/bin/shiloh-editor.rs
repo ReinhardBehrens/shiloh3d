@@ -1,12 +1,12 @@
 //! Standalone Shiloh3D editor binary.
 //!
-//! Uses `eframe` (egui, `glow` backend) for editor chrome. This process is
-//! deliberately separate from `shiloh-demo`'s wgpu `SliceRenderer` window —
-//! see `docs/TECH_STACK.md` for why editor UI and the game's GPU surface
-//! don't currently share a window.
+//! Premium docked shell (egui / glow). Live 3D still runs in `shiloh-demo`'s
+//! wgpu window; this process owns outliner, inspector, node graph, assets,
+//! and URL import.
 //!
 //! Usage: `shiloh-editor [PROJECT_DIR]` (defaults to `./shiloh_project`).
 
+use eframe::egui;
 use shiloh_editor::{EditorApp, Project};
 
 fn main() -> eframe::Result<()> {
@@ -20,9 +20,18 @@ fn main() -> eframe::Result<()> {
             .expect("failed to create editor project directory")
     });
 
+    let mut options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1440.0, 900.0])
+            .with_min_inner_size([1100.0, 700.0])
+            .with_title("Shiloh3D Studio"),
+        ..Default::default()
+    };
+    options.centered = true;
+
     eframe::run_native(
-        "Shiloh3D Editor",
-        eframe::NativeOptions::default(),
+        "Shiloh3D Studio",
+        options,
         Box::new(move |_cc| Ok(Box::new(EditorApp::new(Some(project))))),
     )
 }

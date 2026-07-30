@@ -7,6 +7,10 @@
 
 pub mod module;
 pub mod registry;
+pub mod visual_graph;
 
 pub use module::{ScriptContext, ScriptModule};
 pub use registry::ScriptRegistry;
+pub use visual_graph::{
+    VisualExecStep, VisualGraph, VisualLink, VisualNode, VisualNodeKind,
+};

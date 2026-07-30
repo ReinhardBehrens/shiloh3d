@@ -9,9 +9,13 @@ pub mod platform;
 
 #[cfg(feature = "window")]
 pub mod windowed;
+#[cfg(feature = "window")]
+pub mod winit_map;
 
 pub use app::{App, AppBuilder};
 pub use lifecycle::Phase;
 
 #[cfg(feature = "window")]
 pub use windowed::{RhiBackendKind, run_windowed};
+#[cfg(feature = "window")]
+pub use winit_map::{map_key, map_mouse};

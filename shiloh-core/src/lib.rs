@@ -10,10 +10,12 @@ pub mod frame_alloc;
 pub mod handle;
 pub mod jobs;
 pub mod logging;
+pub mod profile;
 pub mod time;
 
 pub use config::{ConfigError, EngineConfig};
 pub use frame_alloc::FrameAllocator;
 pub use handle::{Handle, HandleAllocator};
 pub use jobs::{JobHandle, JobSystem, JobSystemBuilder};
+pub use profile::{ProfileScope, install_crash_hook, scope, snapshot};
 pub use time::{FixedTimestep, FrameTime, Instant, Time};

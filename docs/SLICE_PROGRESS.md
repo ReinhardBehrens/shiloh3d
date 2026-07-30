@@ -27,7 +27,7 @@ Legend: ⬜ Not started · 🔄 In progress · ✅ Done
 | 9 | Tonemap / grade | ✅ | HDR → ACES post |
 | 10 | Physics → entity | ✅ | Stub body position syncs `Transform` + visible ball |
 | 11 | Audio one-shot | ✅ | `AudioClip::sine_beep` + `play_oneshot` mixed |
-| 12 | Editor H/I/Play | ✅ | `cargo run -p shiloh-editor` |
+| 12 | Editor H/I/Play | ✅ | `cargo run -p shiloh-editor` — premium dock (outliner/FS/viewport/assets/console/inspector/node graph), world-item spawn, URL import |
 
 ## Done when
 
@@ -48,4 +48,6 @@ Legend: ⬜ Not started · 🔄 In progress · ✅ Done
 | 2026-07-29 | Tracker created; 3D-only policy confirmed; slice implementation |
 | 2026-07-29 | Phase 1 ECS/hierarchy/textures/app host + Phase 2 SliceRenderer wired into demo |
 | 2026-07-29 | Phase 2 exit closed: glTF→GPU, physics+audio, editor; Blackmarsh bar confirmed |
-| 2026-07-29 | User locked **real water + atmosphere/effects** as presentation bar (water v2+ next) |
+| 2026-07-29 | User locked **real water + atmosphere/effects** as presentation bar (water v2 deferred until Phase 3–4 foundations) |
+| 2026-07-29 | Phase 1–2 locked done; Phase 3 cook/hot-reload/SM + Phase 4 partition/visual IR started; water v2 last |
+| 2026-07-30 | Phase 3 exit: glTF clips → SM → SkinPalette; Phase 4 flush/execute/streaming; water v2 still last |

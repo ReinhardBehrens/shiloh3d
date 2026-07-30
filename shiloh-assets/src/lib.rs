@@ -8,6 +8,7 @@
 pub mod cache;
 pub mod handle;
 pub mod importer;
+pub mod material;
 pub mod package;
 
 #[cfg(feature = "gltf")]
@@ -19,10 +20,14 @@ pub mod hot_reload;
 pub use cache::AssetCache;
 pub use handle::{AssetId, AssetState};
 pub use importer::{ImportError, Importer};
-pub use package::AssetPackage;
+pub use material::{MaterialAsset, MaterialError};
+pub use package::{AssetPackage, PackageError};
 
 #[cfg(feature = "gltf")]
 pub use gltf_import::{
-    ImportedGltf, ImportedMaterial, ImportedPrimitive, ImportedSkin, ImportedVertex, GltfError,
-    load_gltf,
+    ImportedAnimation, ImportedGltf, ImportedMaterial, ImportedPrimitive, ImportedSkin,
+    ImportedVertex, GltfError, load_gltf,
 };
+
+#[cfg(feature = "hot-reload")]
+pub use hot_reload::HotReloader;

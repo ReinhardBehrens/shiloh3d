@@ -12,8 +12,12 @@ use std::sync::Arc;
 
 use clap::Parser;
 use glam::{Mat4, Quat, Vec3};
-use shiloh_animation::SkinPalette;
-use shiloh_core::{EngineConfig, JobSystem, Time, logging};
+use shiloh_animation::{
+    AnimState, AnimStateMachine, AnimTransition, AnimationClip, Joint, JointTracks, QuatTrack,
+    Skeleton, SkinPalette,
+};
+use shiloh_assets::{HotReloader, MaterialAsset};
+use shiloh_core::{EngineConfig, JobSystem, Time, logging, profile};
 use shiloh_input::{Action, ActionMap, InputState, KeyCode};
 use shiloh_render::{HudVertex, SliceDrawParams, SliceRenderer, orthographic_light_matrix};
 use shiloh_scene::{Camera, ProjectionKind, propagate_transforms, save_scene};
@@ -64,11 +68,18 @@ struct DemoApp {
     screenshot_plan: Vec<(String, f32, Vec3, f32)>,
     screenshot_index: usize,
     screenshot_warmup: u32,
+    material: MaterialAsset,
+    hot_reload: Option<HotReloader>,
+    anim_sm: AnimStateMachine,
+    anim_clips: Vec<AnimationClip>,
+    anim_skeleton: Skeleton,
+    anim_inverse_bind: Vec<glam::Mat4>,
 }
 
 impl DemoApp {
     fn new(args: Args) -> anyhow::Result<Self> {
         logging::init();
+        profile::install_crash_hook(Some(PathBuf::from("crashes")));
         let config = EngineConfig {
             app_name: "Shiloh3D Showcase".into(),
             fixed_update_hz: 60.0,
@@ -118,6 +129,80 @@ impl DemoApp {
             Vec::new()
         };
 
+        let material = MaterialAsset::load("assets/materials/swamp_ground.mat.json")
+            .or_else(|_| MaterialAsset::load("shiloh-demo/assets/materials/swamp_ground.mat.json"))
+            .unwrap_or_else(|_| MaterialAsset::new("SwampGround"));
+        let hot_reload = HotReloader::watch("assets")
+            .or_else(|_| HotReloader::watch("shiloh-demo/assets"))
+            .ok();
+        if hot_reload.is_some() {
+            info!("material hot-reload watching assets/");
+        }
+
+        // Three-bone procedural skeleton + sway clip (glTF clips override when present).
+        let anim_skeleton = Skeleton {
+            joints: vec![
+                Joint {
+                    name: "root".into(),
+                    parent: None,
+                    bind_local: Mat4::IDENTITY,
+                },
+                Joint {
+                    name: "spine".into(),
+                    parent: Some(0),
+                    bind_local: Mat4::from_translation(Vec3::Y * 0.5),
+                },
+                Joint {
+                    name: "head".into(),
+                    parent: Some(1),
+                    bind_local: Mat4::from_translation(Vec3::Y * 0.5),
+                },
+            ],
+        };
+        let anim_inverse_bind = vec![Mat4::IDENTITY; 3];
+        let q0 = Quat::IDENTITY;
+        let q1 = Quat::from_rotation_z(0.45);
+        let q2 = Quat::from_rotation_z(-0.45);
+        let sway_clip = AnimationClip {
+            name: "sway".into(),
+            duration: std::f32::consts::TAU / 2.0,
+            tracks: vec![
+                JointTracks {
+                    joint: 1,
+                    translation: None,
+                    rotation: Some(QuatTrack {
+                        times: vec![0.0, 0.785, 1.57, 2.355, 3.14],
+                        values: vec![q0, q1, q0, q2, q0],
+                    }),
+                    scale: None,
+                },
+                JointTracks {
+                    joint: 2,
+                    translation: None,
+                    rotation: Some(QuatTrack {
+                        times: vec![0.0, 0.785, 1.57, 2.355, 3.14],
+                        values: vec![q0, q2, q0, q1, q0],
+                    }),
+                    scale: None,
+                },
+            ],
+        };
+        let mut anim_sm = AnimStateMachine::default();
+        anim_sm.states.push(AnimState {
+            name: "Idle".into(),
+            clip_index: 0,
+        });
+        anim_sm.states.push(AnimState {
+            name: "Sway".into(),
+            clip_index: 0,
+        });
+        anim_sm.transitions.push(AnimTransition {
+            from: 0,
+            to: 1,
+            duration: 0.2,
+        });
+        anim_sm.goto(1);
+
         Ok(Self {
             args,
             window: None,
@@ -140,6 +225,12 @@ impl DemoApp {
             screenshot_plan,
             screenshot_index: 0,
             screenshot_warmup: 0,
+            material,
+            hot_reload,
+            anim_sm,
+            anim_clips: vec![sway_clip],
+            anim_skeleton,
+            anim_inverse_bind,
         })
     }
 
@@ -345,13 +436,38 @@ impl DemoApp {
         let sun_dir = Vec3::new(-0.45, -1.0, -0.35).normalize();
         let light_view_proj =
             orthographic_light_matrix(sun_dir, Vec3::new(0.0, 0.5, 0.0), 28.0, 1.0, 70.0);
-        let skin = SkinPalette::demo_sway(t, 3);
+        // Phase 3: material hot-reload + anim state machine tick.
+        if let Some(hot) = &self.hot_reload {
+            for path in hot.poll_changed() {
+                if path.extension().and_then(|e| e.to_str()) == Some("json")
+                    && path.to_string_lossy().contains("material")
+                {
+                    match MaterialAsset::load(&path) {
+                        Ok(mat) => {
+                            info!(?path, name = %mat.name, "hot-reloaded material");
+                            self.material = mat;
+                        }
+                        Err(err) => warn!(?err, ?path, "material reload failed"),
+                    }
+                }
+            }
+        }
+        self.anim_sm.tick(dt);
+        let pose = self
+            .anim_sm
+            .evaluate(&self.anim_clips, &self.anim_skeleton);
+        let skin = SkinPalette::from_pose(&pose, &self.anim_skeleton, &self.anim_inverse_bind);
         let char_xform = Mat4::from_scale_rotation_translation(
             Vec3::splat(1.2),
             Quat::from_rotation_y(t * 0.6),
             Vec3::new(2.5, 0.0, 2.0),
         );
         let hud = Self::build_hud(0.72 + (t * 0.5).sin() * 0.05, 0.55);
+        let ambient = Vec3::new(
+            self.material.albedo_color[0] * 0.22,
+            self.material.albedo_color[1] * 0.22,
+            self.material.albedo_color[2] * 0.22,
+        );
 
         if let Some(renderer) = self.renderer.as_mut() {
             renderer.render(SliceDrawParams {
@@ -360,7 +476,7 @@ impl DemoApp {
                 time: t,
                 sun_dir,
                 sun_color: Vec3::new(1.0, 0.92, 0.78),
-                ambient: Vec3::new(0.08, 0.10, 0.09),
+                ambient,
                 fog_color: Vec3::new(0.18, 0.22, 0.20),
                 fog_density: 0.035,
                 light_view_proj,
@@ -370,6 +486,12 @@ impl DemoApp {
                 point1_pos: Vec3::new(-4.0, 1.8, -2.0),
                 point1_range: 10.0,
                 point1_color: Vec3::new(1.0, 0.45, 0.25),
+                spot_pos: Vec3::new(0.0, 4.0, 0.0),
+                spot_range: 14.0,
+                spot_dir: Vec3::new(0.15, -1.0, 0.1).normalize(),
+                spot_inner_cos: 0.92,
+                spot_outer_cos: 0.75,
+                spot_color: Vec3::new(1.0, 0.85, 0.55) * 1.4,
                 exposure: 1.05,
                 contrast: 1.08,
                 saturation: 1.12,
@@ -437,6 +559,43 @@ impl ApplicationHandler for DemoApp {
                                     );
                                 } else {
                                     warn!(path = %gltf_path.display(), "glTF has no primitives");
+                                }
+                                // Phase 3: prefer glTF skin + clips when the file provides them.
+                                if let Some(skin) = doc.skin {
+                                    self.anim_skeleton = skin.to_skeleton();
+                                    self.anim_inverse_bind = skin.inverse_bind;
+                                    info!(
+                                        joints = self.anim_skeleton.joint_count(),
+                                        "glTF skeleton bound for SkinPalette"
+                                    );
+                                }
+                                if !doc.animations.is_empty() {
+                                    self.anim_clips = doc
+                                        .animations
+                                        .iter()
+                                        .map(|a| a.to_clip())
+                                        .collect();
+                                    self.anim_sm = AnimStateMachine::default();
+                                    for (i, clip) in self.anim_clips.iter().enumerate() {
+                                        self.anim_sm.states.push(AnimState {
+                                            name: clip.name.clone(),
+                                            clip_index: i,
+                                        });
+                                    }
+                                    if self.anim_sm.states.len() > 1 {
+                                        self.anim_sm.transitions.push(AnimTransition {
+                                            from: 0,
+                                            to: 1,
+                                            duration: 0.15,
+                                        });
+                                        self.anim_sm.goto(1);
+                                    } else if !self.anim_sm.states.is_empty() {
+                                        self.anim_sm.current = 0;
+                                    }
+                                    info!(
+                                        clips = self.anim_clips.len(),
+                                        "glTF animation clips → state machine"
+                                    );
                                 }
                             }
                             Err(err) => {

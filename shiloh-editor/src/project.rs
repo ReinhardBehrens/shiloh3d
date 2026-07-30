@@ -28,8 +28,18 @@ pub struct Project {
 impl Project {
     pub fn create(root: impl Into<PathBuf>, name: impl Into<String>) -> Result<Self, ProjectError> {
         let root = root.into();
-        std::fs::create_dir_all(root.join("assets"))?;
-        std::fs::create_dir_all(root.join("scenes"))?;
+        for sub in [
+            "assets/Environment",
+            "assets/Foliage",
+            "assets/Materials",
+            "assets/Meshes",
+            "assets/Textures",
+            "assets/Imported",
+            "scenes",
+            "scripts/graphs",
+        ] {
+            std::fs::create_dir_all(root.join(sub))?;
+        }
         let manifest = ProjectManifest {
             name: name.into(),
             engine_version: env!("CARGO_PKG_VERSION").into(),

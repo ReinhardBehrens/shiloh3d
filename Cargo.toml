@@ -81,6 +81,7 @@ clap = { version = "4", features = ["derive"] }
 notify = "8"
 egui = "0.31"
 eframe = { version = "0.31", default-features = true, features = ["default_fonts", "glow"] }
+ureq = { version = "2.12", default-features = false, features = ["tls"] }
 gltf = { version = "1.4", default-features = false, features = ["utils", "names", "import"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 

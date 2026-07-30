@@ -8,5 +8,5 @@
 pub mod replication;
 pub mod transport;
 
-pub use replication::{NetId, ReplicationChannel};
+pub use replication::{NetId, ReplicationBuffer, ReplicationChannel, ReplicationDelta};
 pub use transport::{InMemoryTransport, Packet, Transport};

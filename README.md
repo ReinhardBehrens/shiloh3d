@@ -1,321 +1,130 @@
 <p align="center">
-  <img src="logo_shiloh3d.png" alt="Shiloh3D" width="200" />
+  <img src="logo_shiloh3d.png" alt="Shiloh3D" width="180" />
 </p>
 
 <p align="center">
-  <strong>A modern 3D game engine written in Rust — from scratch.</strong><br/>
-  Performance-first · custom façades · wgpu+WGSL bootstrap · native/web backends
+  <strong>Build worlds. Ship games. Stay in control.</strong><br/>
+  <sub>A modern 3D game engine in Rust — fast, safe, and built for real production.</sub>
 </p>
 
-<blockquote align="center">
-  <p>
-    <em>“And the whole congregation of the children of Israel assembled together at Shiloh,<br/>
-    and set up the tabernacle of the congregation there.<br/>
-    And the land was subdued before them.”</em><br/>
-    <sub>— Joshua 18:1 (KJV)</sub>
-  </p>
-</blockquote>
-
 <p align="center">
-  <a href="#architecture">Architecture</a> ·
-  <a href="#modules">Modules</a> ·
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#features">Features</a> ·
-  <a href="docs/ROADMAP.md">Roadmap</a> ·
-  <a href="docs/TECH_STACK.md">Tech stack</a> ·
-  <a href="docs/GRAPHICS.md">Graphics</a> ·
-  <a href="docs/PREMIUM.md">Premium tech brief</a>
+  <a href="#why-shiloh3d">Why Shiloh3D</a> ·
+  <a href="#what-you-get">What you get</a> ·
+  <a href="#get-started">Get started</a> ·
+  <a href="#roadmap">Roadmap</a> ·
+  <a href="#learn-more">Learn more</a>
 </p>
 
 ---
 
-## What is Shiloh3D?
+## Why Shiloh3D?
 
-**Shiloh3D** is a greenfield 3D game engine built as a Cargo workspace of focused crates. Prefer **custom Shiloh code**; adopt crates like wgpu, winit, Rapier, and egui only behind **stable engine façades** ([docs/TECH_STACK.md](docs/TECH_STACK.md)).
+Shiloh3D is a **from-scratch 3D game engine** for teams that want:
 
-Graphics **bootstrap** is wgpu + WGSL; **shipping desktop** targets native Vulkan/D3D12/Metal on the same RHI; **web** uses WebGL / WebGPU ([docs/GRAPHICS.md](docs/GRAPHICS.md)). Headless CI uses a null device.
+- A **polished editor** and clear workflow  
+- **High-end look** where it matters (lighting, materials, atmosphere, water)  
+- **Large worlds** and multiplayer as first-class goals — not afterthoughts  
+- An open stack you can own, extend, and ship with confidence  
 
-**Direction:** a fast, safe, open Rust engine with a polished visual editor, excellent PBR, large-world support, and first-class multiplayer — proven first as a **vertical slice**, then expanded. See [docs/ROADMAP.md](docs/ROADMAP.md).
+We compete on **usability** and **selected graphical quality** — not on matching every feature of a commercial mega-engine on day one.
+
+> *“And the whole congregation of the children of Israel assembled together at Shiloh, and set up the tabernacle of the congregation there. And the land was subdued before them.”*  
+> — Joshua 18:1 (KJV)
+
+---
+
+## What you get
 
 | | |
 |---|---|
-| **Language** | Rust (edition 2024) |
-| **License** | MIT OR Apache-2.0 |
-| **Status** | `0.1.0` — Phase 1 runtime done; Phase 2 usable-3D exit met (Blackmarsh bar) |
-| **Math** | [`glam`](https://docs.rs/glam) |
-| **GPU path** | wgpu+WGSL bootstrap behind RHI · native shipping · WebGL/WebGPU — [GRAPHICS](docs/GRAPHICS.md) · [TECH_STACK](docs/TECH_STACK.md) |
-| **Scripting** | Native Rust modules first; embeddable JS / Rhai planned |
+| **Runtime** | Solid frame loop, entities, scenes, input, timing |
+| **Look** | Lit 3D path with shadows, fog, water, HUD, and color grading |
+| **Content** | glTF import, save/load scenes, isometric camera for ARPG / RTS feel |
+| **Tools** | Scene editor (hierarchy, inspector, play mode) · project CLI |
+| **Platforms** | Desktop bring-up today · path to native GPU and web |
+
+**Quality target:** cinematic ARPG swamp presentation — mood, atmosphere, and **real water**. See the [quality bar](docs/QUALITY_BAR.md).
 
 ---
 
-## Architecture
+## Get started
 
-### Layered view
-
-```mermaid
-flowchart TB
-  subgraph Tools["Tools"]
-    CLI["shiloh-cli"]
-    ED["shiloh-editor"]
-  end
-
-  subgraph AppLayer["Application"]
-    APP["shiloh-app<br/>window · lifecycle · platform"]
-  end
-
-  subgraph Gameplay["Gameplay & content"]
-    SCENE["shiloh-scene"]
-    ANIM["shiloh-animation"]
-    PHYS["shiloh-physics"]
-    AUDIO["shiloh-audio"]
-    INPUT["shiloh-input"]
-    NET["shiloh-network"]
-    SCRIPT["shiloh-scripting"]
-    ASSETS["shiloh-assets"]
-  end
-
-  subgraph Frame["Frame pipeline"]
-    ECS["shiloh-ecs<br/>entities · systems · schedule"]
-    RENDER["shiloh-render<br/>render graph"]
-    RHI["shiloh-rhi<br/>GPU abstraction"]
-  end
-
-  subgraph Foundation["Foundation"]
-    CORE["shiloh-core<br/>IDs · time · jobs · config · logging"]
-  end
-
-  CLI --> ASSETS
-  CLI --> ED
-  ED --> APP
-  APP --> SCENE
-  APP --> ECS
-  APP --> RENDER
-  APP --> INPUT
-  APP --> SCRIPT
-  SCENE --> ECS
-  ANIM --> CORE
-  PHYS --> ECS
-  AUDIO --> CORE
-  INPUT --> CORE
-  NET --> ECS
-  SCRIPT --> SCENE
-  SCRIPT --> ECS
-  ASSETS --> CORE
-  RENDER --> RHI
-  ECS --> CORE
-  RHI --> CORE
-  RENDER --> CORE
-```
-
-### Runtime frame loop
-
-```mermaid
-sequenceDiagram
-  participant App as shiloh-app
-  participant Time as shiloh-core/Time
-  participant Sched as shiloh-ecs/Schedule
-  participant Phys as FixedUpdate
-  participant GFX as shiloh-render
-  participant RHI as shiloh-rhi
-
-  App->>Time: tick()
-  Time-->>App: delta + fixed steps
-  App->>Sched: PreUpdate → Update → PostUpdate
-  App->>Phys: FixedUpdate × N
-  App->>GFX: begin_frame / graph
-  App->>Sched: Render stage
-  GFX->>RHI: encode · submit · present
-```
-
-### Design principles
-
-- **Crate boundaries** — each subsystem is a library with a clear public API  
-- **Generational handles** — stable IDs that detect stale references  
-- **Archetype ECS** — cache-friendly SoA storage for systems  
-- **Job system** — work-stealing workers for parallel frame work  
-- **Render graph** — declare passes/resources; compile to execution order  
-- **Native-first graphics** — RHI with Vulkan/D3D12/Metal primary; wgpu + WebGL as extensions (see [GRAPHICS.md](docs/GRAPHICS.md))  
-- **Rust as far as possible** — null device by default for CI; windowing / GPU features opt-in  
-- **Scripting-ready** — `ScriptModule` today; custom JS/Rhai backends planned  
-
----
-
-## Modules
-
-| Crate | Role |
-|---|---|
-| [`shiloh-app`](shiloh-app/) | Window, lifecycle, platform integration; headless by default |
-| [`shiloh-core`](shiloh-core/) | Generational IDs, time, logging, jobs, frame scratch, config |
-| [`shiloh-ecs`](shiloh-ecs/) | Entities, components, archetype storage, systems, stages |
-| [`shiloh-render`](shiloh-render/) | High-level renderer + transient render graph |
-| [`shiloh-rhi`](shiloh-rhi/) | RHI — native primary, wgpu extension, WebGL, null |
-| [`shiloh-scene`](shiloh-scene/) | Scenes, parent/child hierarchy, transforms, prefabs |
-| [`shiloh-assets`](shiloh-assets/) | Import, cache, packages; optional hot-reload |
-| [`shiloh-physics`](shiloh-physics/) | Physics backend trait + stub integrator |
-| [`shiloh-animation`](shiloh-animation/) | Skeletons, clips, blending, state machines |
-| [`shiloh-audio`](shiloh-audio/) | Spatial sources, listener, software mixer |
-| [`shiloh-input`](shiloh-input/) | Keyboard, mouse, gamepad, touch — double-buffered |
-| [`shiloh-network`](shiloh-network/) | Replication IDs + transport (in-memory loopback) |
-| [`shiloh-scripting`](shiloh-scripting/) | Rust game modules; embeddable custom scripts later |
-| [`shiloh-editor`](shiloh-editor/) | Project management & selection model (UI later) |
-| [`shiloh-cli`](shiloh-cli/) | Create projects, package assets, automation |
-
-```
-Shiloh3D
-├── shiloh-app          Window, lifecycle and platform integration
-├── shiloh-core         IDs, time, logging, jobs and configuration
-├── shiloh-ecs          Entities, components, systems and scheduling
-├── shiloh-render       Render graph and high-level renderer
-├── shiloh-rhi          Native GPU RHI (+ wgpu extension, WebGL)
-├── shiloh-scene        Scenes, hierarchy, transforms and prefabs
-├── shiloh-assets       Importing, caching, hot reload and packages
-├── shiloh-physics      Physics abstraction
-├── shiloh-animation    Skeletons, blending and state machines
-├── shiloh-audio        Spatial audio and mixing
-├── shiloh-input        Keyboard, mouse, controller and touch
-├── shiloh-network      Replication and multiplayer transport
-├── shiloh-scripting    Rust modules and later visual / JS scripting
-├── shiloh-editor       Scene editor and project management
-└── shiloh-cli          Build, package, import and automation tools
-```
-
----
-
-## Features
-
-| Area | Today | Next |
-|---|---|---|
-| **Core runtime** | Time, jobs, config, handles | Profiling hooks |
-| **ECS** | Spawn, components, staged schedule | Full archetype moves, parallel systems |
-| **Rendering** | Graph + null + wgpu demo path | Native backends, textures, PBR |
-| **Scene** | Transform + hierarchy types | Dirty propagation, prefab instantiate |
-| **Physics** | Stub backend | Rapier (Rust) integration |
-| **Audio** | Mixer stub | cpal / rodio output |
-| **Scripting** | `ScriptModule` (Rust) | JavaScript (Boa) and/or Rhai |
-| **Editor** | Project files on disk | Scene viewport & inspectors |
-| **Networking** | In-memory transport | QUIC / reliable channels |
-
-Optional Cargo features:
+**Need:** Rust 1.85+ and a C linker (`gcc` or `clang`).
 
 ```bash
-# Null RHI (CI)
-cargo check -p shiloh-rhi
+# Play the showcase
+cargo run -p shiloh-demo
 
-# wgpu extension (current demo path)
-cargo check -p shiloh-rhi --features wgpu
+# Open the scene editor
+cargo run -p shiloh-editor
 
-# Native primary stubs / WebGL stubs
-cargo check -p shiloh-rhi --features native
-cargo check -p shiloh-rhi --features web
-```
-
----
-
-## Quick start
-
-**Requirements:** Rust stable ≥ 1.85 (`rustup`), and a system linker (`gcc` / `clang`).
-
-```bash
-# Check the whole workspace
-cargo check --workspace
-
-# Showcase demo (windowed GPU — Windows / macOS / Linux)
-cargo run -p shiloh-demo --release
-
-# Headless smoke
+# Quick headless check
 cargo run -p shiloh-demo -- --headless-frames 60
-
-# Run the headless runtime shell (few frames, then exit)
-cargo run -p shiloh-app
-
-# CLI
-cargo run -p shiloh-cli -- info
-cargo run -p shiloh-cli -- new my_game --path .
 ```
 
-Logging uses `tracing`. Example:
-
-```bash
-RUST_LOG=debug cargo run -p shiloh-app
-```
+| Control | Action |
+|---|---|
+| WASD | Pan |
+| Drag | Pan |
+| Scroll | Zoom |
+| Esc | Quit |
 
 ---
 
-## Tech stack (at a glance)
+## How the product is organized
 
-Prefer custom Shiloh code; wrap third parties — full policy in [TECH_STACK.md](docs/TECH_STACK.md).
+Everything is a focused library. Games talk to **Shiloh APIs** — not raw third-party engine guts.
 
-| Concern | Choice |
+| Piece | What it does for you |
 |---|---|
-| Workspace | Cargo resolver 2, shared lints & release LTO |
-| Math | `glam` (public exception for now) |
-| Concurrency | Custom `JobSystem` (+ Rayon inside impls) |
-| Config / assets | serde + versioned engine formats; **glTF** first |
-| Diagnostics | `tracing`; Tracy + GPU timestamps planned |
-| CLI | `clap` |
-| GPU bootstrap | **wgpu** + **WGSL** behind `shiloh-rhi` / `shiloh-render` |
-| GPU shipping | Native Vulkan/D3D12/Metal on same RHI |
-| Web GPU | WebGL + WebGPU (wgpu) |
-| Window / input | **winit** behind `shiloh-app` / `shiloh-input` |
-| ECS | **Custom** `shiloh-ecs` |
-| Editor GUI | **egui** behind `shiloh-editor` (planned) |
-| Physics | **Rapier** behind `shiloh-physics` (planned) |
-| Audio | **Kira**/native behind `shiloh-audio` (planned) |
-| Scripting | Rust modules first |
+| **App** | Window, lifecycle, run loop |
+| **Editor** | Docked Studio shell — outliner, inspector, node graph, world items, URL import, play / stop |
+| **Scene** | Worlds of objects, parents/children, cameras |
+| **Assets** | Load meshes and materials (glTF) |
+| **Render** | Draw the frame — lights, shadows, water, UI overlay |
+| **Animation · Physics · Audio** | Motion, bodies, sound (growing every phase) |
+| **Scripting** | Rust gameplay modules first; JS-style scripting later |
+| **Network** | Multiplayer foundations early |
+| **CLI** | New project and packaging helpers |
 
-Release profile uses thin LTO and a single codegen unit for ship builds.
-
----
-
-## Documentation
-
-| Doc | Description |
-|---|---|
-| **[Quality bar](docs/QUALITY_BAR.md)** | What it takes to ship ARPG-class worlds (reference analysis) |
-| **[Tech stack](docs/TECH_STACK.md)** | Advised crates, custom-first policy, API boundary rules |
-| **[Graphics backends](docs/GRAPHICS.md)** | wgpu bootstrap · native shipping · WebGL |
-| **[Roadmap](docs/ROADMAP.md)** | Phases 1–4 development sequence with live status |
-| **[Premium tech brief](docs/PREMIUM.md)** | Product-facing overview + screenshot gallery |
-| **[Performance review](docs/PERF_REVIEW.md)** | Hot-path review of demo + engine foundations |
-| **[Showcase demo](shiloh-demo/README.md)** | Cross-platform GPU demo (Win / macOS / Linux) |
-| This README | Architecture, modules, build & run |
-
-Screenshots live under [`docs/screenshots/`](docs/screenshots/) (placeholders until version captures are checked in).
+Full module list and policies live in the docs below — this page stays product-focused.
 
 ---
 
 ## Roadmap
 
-See **[docs/ROADMAP.md](docs/ROADMAP.md)** for the full four-phase plan and **[docs/QUALITY_BAR.md](docs/QUALITY_BAR.md)** for the Blackmarsh presentation bar (effects, atmosphere, **real water**).
-
-| Phase | Theme | Status |
+| Phase | Focus | Status |
 |---|---|---|
-| **1** | Core runtime — engine / world-builder foundation | **Done** — ECS, hierarchy, textured mesh, selectable RHI, app host |
-| **2** | Usable 3D — vertical slice exit | **Done** — PBR/lights/shadows, glTF→GPU, scene JSON, physics+audio one-shot, editor hierarchy/inspector/play, water/fog/HUD v1 |
-| **3** | Production workflow + Blackmarsh FX | **Next** — hot reload, packaging, profiling; **water v2–v3**, height fog, wetness, foliage |
-| **4** | Competitive scale | Later — GPU-driven rendering, streaming, GI, SSR-class water, net at scale, consoles |
+| **1** | Core engine & world-builder foundation | **Done** |
+| **2** | Usable 3D vertical slice | **Done** |
+| **3** | Production workflow + Blackmarsh-class water & atmosphere | **Next** |
+| **4** | Scale — streaming, advanced graphics, multiplayer depth | Later |
 
-**Now:** Phase 1–2 exits are met. Deepen toward the Blackmarsh bar (real water + atmosphere) while Phase 3 makes the content loop producible.
+**Right now:** deepen **real water**, fog, and mood toward the quality bar, while making day-to-day content work smoother (reload, package, profile).
 
-```bash
-cargo run -p shiloh-demo      # iso vertical slice
-cargo run -p shiloh-editor    # hierarchy / inspector / play
-```
+Details: [Roadmap](docs/ROADMAP.md) · [Quality bar](docs/QUALITY_BAR.md)
+
+---
+
+## Learn more
+
+| Doc | For |
+|---|---|
+| [Quality bar](docs/QUALITY_BAR.md) | The look we’re aiming at |
+| [Roadmap](docs/ROADMAP.md) | What’s done and what’s next |
+| [Tech stack](docs/TECH_STACK.md) | How we choose and wrap tools |
+| [Graphics](docs/GRAPHICS.md) | Desktop, web, and GPU paths |
+| [Premium brief](docs/PREMIUM.md) | Product overview & gallery |
+| [Showcase demo](shiloh-demo/README.md) | Running the sample |
 
 ---
 
 ## License
 
-Licensed under either of
-
-- Apache License, Version 2.0, or  
-- MIT license  
-
-at your option.
+MIT **or** Apache-2.0 — your choice.
 
 ---
 
 <p align="center">
-  <img src="logo_shiloh3d.png" alt="Shiloh3D" width="64" /><br/>
-  <sub>Shiloh3D — built in Rust, designed for real-time 3D.</sub>
+  <img src="logo_shiloh3d.png" alt="" width="56" />
 </p>

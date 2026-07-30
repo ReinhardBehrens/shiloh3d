@@ -20,7 +20,7 @@ pollster.workspace = true
 rayon.workspace = true
 serde_json.workspace = true
 shiloh-animation = { workspace = true }
-shiloh-assets = { workspace = true }
+shiloh-assets = { workspace = true, features = ["gltf", "hot-reload"] }
 shiloh-audio = { workspace = true }
 shiloh-core = { workspace = true }
 shiloh-ecs = { workspace = true }

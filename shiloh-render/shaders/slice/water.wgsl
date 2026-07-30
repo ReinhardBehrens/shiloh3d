@@ -12,6 +12,9 @@ struct FrameUniform {
     point0_color: vec4<f32>,
     point1_pos_range: vec4<f32>,
     point1_color: vec4<f32>,
+    spot_pos_range: vec4<f32>,
+    spot_dir_cos: vec4<f32>,
+    spot_color: vec4<f32>,
     params: vec4<f32>,
 }
 

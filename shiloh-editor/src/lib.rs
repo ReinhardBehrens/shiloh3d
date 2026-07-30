@@ -10,7 +10,13 @@ pub mod play_mode;
 pub mod project;
 pub mod selection;
 #[cfg(feature = "ui")]
+pub mod import;
+#[cfg(feature = "ui")]
+pub mod node_graph;
+#[cfg(feature = "ui")]
 pub mod ui;
+#[cfg(feature = "ui")]
+pub mod world_items;
 
 pub use play_mode::{EditorMode, PlaySession};
 pub use project::{Project, ProjectManifest};

@@ -1,0 +1,8 @@
+{
+  "name": "SwampGround",
+  "albedo_color": [0.35, 0.42, 0.28, 1.0],
+  "metallic": 0.05,
+  "roughness": 0.72,
+  "albedo_texture": null,
+  "metallic_roughness_texture": null
+}

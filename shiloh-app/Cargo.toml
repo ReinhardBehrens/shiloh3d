@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+glam.workspace = true
 shiloh-animation = { workspace = true }
 shiloh-assets = { workspace = true }
 shiloh-audio = { workspace = true }

@@ -20,12 +20,14 @@ shiloh-assets = { workspace = true }
 shiloh-core = { workspace = true }
 shiloh-ecs = { workspace = true }
 shiloh-scene = { workspace = true }
+shiloh-scripting = { workspace = true }
 thiserror.workspace = true
 tracing.workspace = true
+ureq = { workspace = true, optional = true }
 
 [features]
 default = ["ui"]
-ui = ["dep:egui", "dep:eframe"]
+ui = ["dep:egui", "dep:eframe", "dep:ureq"]
 
 [[bin]]
 name = "shiloh-editor"

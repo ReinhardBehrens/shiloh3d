@@ -58,6 +58,7 @@ impl AppBuilder {
 
     pub fn build(self) -> App {
         logging::init();
+        shiloh_core::profile::install_crash_hook(Some(std::path::PathBuf::from("crashes")));
         let mut jobs = JobSystem::builder();
         if let Some(n) = self.config.job_workers {
             jobs = jobs.worker_count(n);
@@ -104,12 +105,16 @@ impl App {
 
     /// One frame of the engine loop (headless or windowed host).
     pub fn tick_once(&mut self) -> anyhow::Result<()> {
+        let _frame_scope = shiloh_core::profile::scope("app.tick_once");
         self.input.begin_frame();
         let fixed_steps = self.time.tick();
         let frame = self.time.frame();
 
-        self.schedule.run(&mut self.world);
-        self.schedule.run_fixed(&mut self.world, fixed_steps);
+        {
+            let _s = shiloh_core::profile::scope("ecs.schedule");
+            self.schedule.run(&mut self.world);
+            self.schedule.run_fixed(&mut self.world, fixed_steps);
+        }
 
         let ctx = FrameContext {
             device: self.device.as_ref(),
@@ -117,9 +122,12 @@ impl App {
             width: 1280,
             height: 720,
         };
-        self.renderer.begin_frame(&ctx);
-        self.schedule.run_render(&mut self.world);
-        self.renderer.end_frame(self.device.as_ref())?;
+        {
+            let _s = shiloh_core::profile::scope("render.frame");
+            self.renderer.begin_frame(&ctx);
+            self.schedule.run_render(&mut self.world);
+            self.renderer.end_frame(self.device.as_ref())?;
+        }
         Ok(())
     }
 

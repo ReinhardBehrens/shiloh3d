@@ -11,6 +11,8 @@ rust-version.workspace = true
 shiloh-core = { workspace = true }
 shiloh-ecs = { workspace = true }
 shiloh-scene = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

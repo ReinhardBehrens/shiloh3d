@@ -81,8 +81,9 @@ impl AnimStateMachine {
         {
             let from_pose = clip.sample_pose(skeleton, self.time);
             let u = (self.blend_t / self.blend_duration.max(1e-4)).clamp(0.0, 1.0);
-            let to_pose = pose.clone();
-            blend_poses(&from_pose, &to_pose, u, &mut pose);
+            let mut blended = Pose::bind_pose(skeleton);
+            blend_poses(&from_pose, &pose, u, &mut blended);
+            pose = blended;
         }
         pose
     }

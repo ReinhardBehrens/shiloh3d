@@ -16,6 +16,10 @@ pub mod node_graph;
 #[cfg(feature = "ui")]
 pub mod ui;
 #[cfg(feature = "ui")]
+pub mod gltf_mesh;
+#[cfg(feature = "ui")]
+pub mod viewport;
+#[cfg(feature = "ui")]
 pub mod world_items;
 
 pub use play_mode::{EditorMode, PlaySession};

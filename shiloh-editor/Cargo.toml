@@ -16,22 +16,29 @@ glam.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 shiloh-app = { workspace = true }
-shiloh-assets = { workspace = true }
+shiloh-assets = { workspace = true, features = ["gltf"] }
 shiloh-core = { workspace = true }
 shiloh-ecs = { workspace = true }
 shiloh-scene = { workspace = true }
 shiloh-scripting = { workspace = true }
+shiloh-render = { workspace = true, optional = true, features = ["wgpu"] }
+pollster = { workspace = true, optional = true }
 thiserror.workspace = true
 tracing.workspace = true
 ureq = { workspace = true, optional = true }
+image = { workspace = true, optional = true }
 
 [features]
 default = ["ui"]
-ui = ["dep:egui", "dep:eframe", "dep:ureq"]
+ui = ["dep:egui", "dep:eframe", "dep:ureq", "dep:shiloh-render", "dep:pollster", "dep:image"]
 
 [[bin]]
 name = "shiloh-editor"
 path = "src/bin/shiloh-editor.rs"
+required-features = ["ui"]
+
+[[example]]
+name = "e2e_valley_shot"
 required-features = ["ui"]
 
 [lints]

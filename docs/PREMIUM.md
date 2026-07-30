@@ -29,9 +29,12 @@ Shiloh3D is a **from-scratch Rust 3D engine**: modular crates, cache-conscious E
 
 **Product thesis:** compete on *usability* and *selected graphical quality* (excellent PBR, large-world support, first-class multiplayer, polished editor) — not on matching any commercial engine’s entire feature list. Ship a playable vertical slice before expanding.
 
+**Ownership & embedding:** Shiloh3D is a **Christian-owned** engine meant to be **bundled into other games** the way teams ship Unreal or Godot — your title owns the runtime path; Shiloh is the stack underneath, not a closed platform lock-in.
+
 **Who it’s for**
 
 - Teams that want a fast, safe, open Rust runtime with a serious editor path  
+- Studios that need an embeddable engine they can ship inside their own product  
 - Gameplay programmers who prefer clear crates and native Rust modules (JS / visual scripting later)  
 - Projects that need headless simulation and a shared editor/runtime architecture  
 

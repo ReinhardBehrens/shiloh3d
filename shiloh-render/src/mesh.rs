@@ -304,6 +304,84 @@ pub fn slice_unit_cube(color: Vec3) -> SliceMeshCpu {
     SliceMeshCpu { vertices, indices }
 }
 
+/// Vertex-colored meshes for the editor forest-valley viewport buckets.
+pub fn slice_foliage_mesh() -> SliceMeshCpu {
+    // Simple pine: square pyramid canopy (reads as a tree when tall-scaled).
+    let green = [0.10, 0.38, 0.14];
+    let tip = [0.0, 1.0, 0.0];
+    let base = [
+        [-0.55, 0.0, -0.55],
+        [0.55, 0.0, -0.55],
+        [0.55, 0.0, 0.55],
+        [-0.55, 0.0, 0.55],
+    ];
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+    // sides
+    for i in 0..4 {
+        let a = base[i];
+        let b = base[(i + 1) % 4];
+        let n = {
+            let e1 = glam::Vec3::from_array([
+                a[0] - tip[0],
+                a[1] - tip[1],
+                a[2] - tip[2],
+            ]);
+            let e2 = glam::Vec3::from_array([
+                b[0] - tip[0],
+                b[1] - tip[1],
+                b[2] - tip[2],
+            ]);
+            e1.cross(e2).normalize_or_zero().to_array()
+        };
+        let base_i = vertices.len() as u32;
+        vertices.push(SliceVertex {
+            position: tip,
+            normal: n,
+            uv: [0.5, 1.0],
+            color: green,
+        });
+        vertices.push(SliceVertex {
+            position: a,
+            normal: n,
+            uv: [0.0, 0.0],
+            color: green,
+        });
+        vertices.push(SliceVertex {
+            position: b,
+            normal: n,
+            uv: [1.0, 0.0],
+            color: green,
+        });
+        indices.extend_from_slice(&[base_i, base_i + 1, base_i + 2]);
+    }
+    // underside
+    let n = [0.0, -1.0, 0.0];
+    let base_i = vertices.len() as u32;
+    for p in &base {
+        vertices.push(SliceVertex {
+            position: *p,
+            normal: n,
+            uv: [0.0, 0.0],
+            color: green,
+        });
+    }
+    indices.extend_from_slice(&[base_i, base_i + 2, base_i + 1, base_i, base_i + 3, base_i + 2]);
+    SliceMeshCpu { vertices, indices }
+}
+
+pub fn slice_rock_mesh() -> SliceMeshCpu {
+    slice_icosphere(1, Vec3::new(0.32, 0.26, 0.22))
+}
+
+pub fn slice_mountain_mesh() -> SliceMeshCpu {
+    slice_unit_cube(Vec3::new(0.28, 0.30, 0.34))
+}
+
+pub fn slice_ground_mesh() -> SliceMeshCpu {
+    slice_unit_cube(Vec3::new(0.14, 0.34, 0.12))
+}
+
 /// UV-mapped icosphere for the slice path.
 pub fn slice_icosphere(subdivisions: u32, color: Vec3) -> SliceMeshCpu {
     let mesh = MeshCpu::icosphere(subdivisions, color);

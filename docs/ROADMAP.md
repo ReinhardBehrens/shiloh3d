@@ -11,6 +11,8 @@ Legend: **Done** · **Partial** · **Not started**
 
 Build Shiloh3D in **Rust**, and initially compete on **usability** (approachable editor and workflow) plus **selected high-end graphics** — not on matching any one commercial engine’s total feature count.
 
+Shiloh3D is **Christian-owned** and designed to be **bundled into other games** (the same role Unreal / Godot play for many titles): a shippable runtime + editor stack your product owns, not a closed storefront.
+
 **Strongest achievable first product**
 
 > A fast, safe, open Rust 3D engine with a polished visual editor, excellent PBR rendering, large-world support, and first-class multiplayer.
@@ -62,9 +64,9 @@ Goal: author a scene in the editor, see excellent-enough PBR in play mode, save 
 | Physics | **Partial** | Stub integrator; Rapier later |
 | Audio | **Partial** | Software mixer one-shot; device backend later |
 | Scene serialization | **Done** | Shared scene JSON + parents |
-| Basic editor | **Done** | Premium Studio shell, node graph, world items, URL import |
+| Basic editor | **Done** | Premium Studio shell + **live wgpu viewport** (offscreen SliceRenderer → egui), node graph, world items, URL import |
 
-**Phase 2 exit criteria** — all met. Embedded wgpu viewport remains a polish gap (not an exit blocker).
+**Phase 2 exit criteria** — all met. Live 3D viewport is embedded via offscreen `SliceRenderer` readback (shared-device egui-wgpu alignment is a later polish).
 
 ---
 

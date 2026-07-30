@@ -27,7 +27,7 @@ Legend: ⬜ Not started · 🔄 In progress · ✅ Done
 | 9 | Tonemap / grade | ✅ | HDR → ACES post |
 | 10 | Physics → entity | ✅ | Stub body position syncs `Transform` + visible ball |
 | 11 | Audio one-shot | ✅ | `AudioClip::sine_beep` + `play_oneshot` mixed |
-| 12 | Editor H/I/Play | ✅ | `cargo run -p shiloh-editor` — premium dock (outliner/FS/viewport/assets/console/inspector/node graph), world-item spawn, URL import |
+| 12 | Editor H/I/Play | ✅ | Live wgpu viewport (offscreen SliceRenderer), outliner/inspector/node graph, world items, URL import |
 
 ## Done when
 

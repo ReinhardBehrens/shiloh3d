@@ -20,6 +20,15 @@ out/
 .tmp/
 shiloh_project/
 
+# Large / regenerable Poly Haven downloads (use download_polyhaven.py)
+shiloh-editor/assets/hdris/
+shiloh-editor/assets/props/pine_tree_01/
+shiloh-editor/assets/props/fir_tree_01/
+shiloh-editor/assets/props/pine_sapling_medium/
+
+# Scratch crops
+docs/references/_crop_*.png
+
 # Environment / secrets
 .env
 .env.*

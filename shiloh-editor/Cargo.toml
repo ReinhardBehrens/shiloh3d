@@ -15,12 +15,13 @@ egui = { workspace = true, optional = true }
 glam.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-shiloh-app = { workspace = true }
+shiloh-app = { workspace = true, features = ["icon"] }
 shiloh-assets = { workspace = true, features = ["gltf"] }
 shiloh-core = { workspace = true }
 shiloh-ecs = { workspace = true }
 shiloh-scene = { workspace = true }
 shiloh-scripting = { workspace = true }
+shiloh-ray = { workspace = true, optional = true }
 shiloh-render = { workspace = true, optional = true, features = ["wgpu"] }
 pollster = { workspace = true, optional = true }
 thiserror.workspace = true
@@ -30,7 +31,7 @@ image = { workspace = true, optional = true }
 
 [features]
 default = ["ui"]
-ui = ["dep:egui", "dep:eframe", "dep:ureq", "dep:shiloh-render", "dep:pollster", "dep:image"]
+ui = ["dep:egui", "dep:eframe", "dep:ureq", "dep:shiloh-render", "dep:pollster", "dep:image", "dep:shiloh-ray"]
 
 [[bin]]
 name = "shiloh-editor"
@@ -39,6 +40,10 @@ required-features = ["ui"]
 
 [[example]]
 name = "e2e_valley_shot"
+required-features = ["ui"]
+
+[[example]]
+name = "visual_gate"
 required-features = ["ui"]
 
 [lints]

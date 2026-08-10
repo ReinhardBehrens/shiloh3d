@@ -8,24 +8,14 @@
 use eframe::egui;
 use shiloh_editor::{EditorApp, Project};
 
-/// Window / taskbar icon — faceted crimson **S** mark (`logo_shiloh3d.png`).
+/// Window / taskbar icon — same faceted crimson **S** as in-app branding
+/// (`logo_shiloh3d.png` via `shiloh_app::logo_rgba_square`).
 fn shiloh_window_icon() -> egui::IconData {
-    const LOGO_PNG: &[u8] = include_bytes!("../../../logo_shiloh3d.png");
-    let rgba = image::load_from_memory(LOGO_PNG)
-        .expect("embedded Shiloh3D logo")
-        .into_rgba8();
-    let (w, h) = rgba.dimensions();
-    let side = w.max(h);
-    let mut square = image::RgbaImage::from_pixel(side, side, image::Rgba([0, 0, 0, 0]));
-    let ox = ((side - w) / 2) as i64;
-    let oy = ((side - h) / 2) as i64;
-    image::imageops::overlay(&mut square, &rgba, ox, oy);
-    let size = 256u32;
-    let thumb = image::imageops::thumbnail(&square, size, size);
+    let (w, h, rgba) = shiloh_app::logo_rgba_square(256);
     egui::IconData {
-        rgba: thumb.into_raw(),
-        width: size,
-        height: size,
+        rgba,
+        width: w,
+        height: h,
     }
 }
 
@@ -45,6 +35,8 @@ fn main() -> eframe::Result<()> {
             .with_inner_size([1440.0, 900.0])
             .with_min_inner_size([1100.0, 700.0])
             .with_title("Shiloh3D Studio")
+            // Wayland/X11: matches packaging/linux/*.desktop StartupWMClass.
+            .with_app_id(shiloh_app::SHILOH_APP_ID)
             .with_icon(shiloh_window_icon()),
         ..Default::default()
     };

@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Shiloh3D Studio
+GenericName=3D Engine Editor
+Comment=Christian-owned Shiloh3D world editor — Powered by Poly Haven assets when used
+Exec=shiloh-editor %f
+# Install packaging/icons/shiloh3d.png as hicolor scalable/apps or symlink here.
+Icon=shiloh3d
+Terminal=false
+Categories=Development;Graphics;3DGraphics;
+StartupNotify=true
+# Must match egui ViewportBuilder::with_app_id / winit Wayland app id.
+StartupWMClass=shiloh3d-studio
+Keywords=shiloh;3d;editor;game;engine;

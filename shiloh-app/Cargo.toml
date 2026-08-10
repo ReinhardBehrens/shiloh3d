@@ -29,10 +29,13 @@ tracing.workspace = true
 # Native windowing is optional — headless app runs on pure Rust by default.
 winit = { workspace = true, optional = true }
 pollster = { workspace = true, optional = true }
+image = { workspace = true, optional = true }
 
 [features]
 default = []
-window = ["dep:winit", "dep:pollster"]
+# Product logo decode for taskbar / egui icons (no window required).
+icon = ["dep:image"]
+window = ["dep:winit", "dep:pollster", "icon"]
 gpu = ["shiloh-rhi/wgpu", "shiloh-render/wgpu"]
 # Convenience: window + selectable RHI device install.
 desktop = ["window", "gpu"]

@@ -13,12 +13,14 @@ members = [
     "shiloh-input",
     "shiloh-network",
     "shiloh-scripting",
+    "shiloh-ray",
     "shiloh-app",
     "shiloh-editor",
     "shiloh-cli",
     "shiloh-demo",
+    "lions-gate",
 ]
-default-members = ["shiloh-app", "shiloh-cli", "shiloh-demo"]
+default-members = ["shiloh-app", "shiloh-cli", "shiloh-demo", "lions-gate"]
 
 [workspace.package]
 version = "0.1.0"
@@ -42,6 +44,7 @@ shiloh-audio = { path = "shiloh-audio" }
 shiloh-input = { path = "shiloh-input" }
 shiloh-network = { path = "shiloh-network" }
 shiloh-scripting = { path = "shiloh-scripting" }
+shiloh-ray = { path = "shiloh-ray" }
 shiloh-app = { path = "shiloh-app" }
 shiloh-editor = { path = "shiloh-editor" }
 
@@ -84,6 +87,8 @@ eframe = { version = "0.31", default-features = true, features = ["default_fonts
 ureq = { version = "2.12", default-features = false, features = ["tls"] }
 gltf = { version = "1.4", default-features = false, features = ["utils", "names", "import"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+rhai = { version = "1.21", default-features = false, features = ["std", "sync"] }
+parry3d = { version = "0.21", default-features = false, features = ["required-features", "alloc"] }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

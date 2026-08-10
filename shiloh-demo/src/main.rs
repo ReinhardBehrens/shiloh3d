@@ -540,9 +540,30 @@ impl ApplicationHandler for DemoApp {
         if self.window.is_some() {
             return;
         }
-        let attrs = Window::default_attributes()
+        // Same product mark as Studio chrome — OS taskbar / dock / Alt-Tab.
+        // App id pattern adapted from winit (Apache-2.0/MIT):
+        // https://github.com/rust-windowing/winit — WindowAttributesExt{X11,Wayland}
+        let mut attrs = Window::default_attributes()
             .with_title("Shiloh3D — Believable Slice")
-            .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 720.0));
+            .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 720.0))
+            .with_window_icon(Some(shiloh_app::window_icon()));
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        ))]
+        {
+            use winit::platform::wayland::WindowAttributesExtWayland as Wl;
+            use winit::platform::x11::WindowAttributesExtX11 as X11;
+            attrs = Wl::with_name(attrs, shiloh_app::SHILOH_APP_ID, "");
+            attrs = X11::with_class(
+                attrs,
+                shiloh_app::SHILOH_APP_ID.to_string(),
+                "Shiloh3D".to_string(),
+            );
+        }
         match event_loop.create_window(attrs) {
             Ok(window) => {
                 let window = Arc::new(window);

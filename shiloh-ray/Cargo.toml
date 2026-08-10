@@ -1,0 +1,17 @@
+[package]
+name = "shiloh-ray"
+description = "Accurate mesh raycasting for Shiloh Studio (Blender-like pick) via Parry BVH/TriMesh"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+glam.workspace = true
+parry3d = { workspace = true }
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

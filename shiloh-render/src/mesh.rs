@@ -307,7 +307,7 @@ pub fn slice_unit_cube(color: Vec3) -> SliceMeshCpu {
 /// Vertex-colored meshes for the editor forest-valley viewport buckets.
 pub fn slice_foliage_mesh() -> SliceMeshCpu {
     // Simple pine: square pyramid canopy (reads as a tree when tall-scaled).
-    let green = [0.10, 0.38, 0.14];
+    let green = [0.22, 0.42, 0.12];
     let tip = [0.0, 1.0, 0.0];
     let base = [
         [-0.55, 0.0, -0.55],
@@ -371,15 +371,16 @@ pub fn slice_foliage_mesh() -> SliceMeshCpu {
 }
 
 pub fn slice_rock_mesh() -> SliceMeshCpu {
-    slice_icosphere(1, Vec3::new(0.32, 0.26, 0.22))
+    slice_icosphere(1, Vec3::new(0.52, 0.38, 0.26))
 }
 
 pub fn slice_mountain_mesh() -> SliceMeshCpu {
-    slice_unit_cube(Vec3::new(0.28, 0.30, 0.34))
+    slice_unit_cube(Vec3::new(0.42, 0.36, 0.30))
 }
 
 pub fn slice_ground_mesh() -> SliceMeshCpu {
-    slice_unit_cube(Vec3::new(0.14, 0.34, 0.12))
+    // Warm meadow / dry grass — FirstGoal valley read under golden sun.
+    slice_unit_cube(Vec3::new(0.42, 0.38, 0.18))
 }
 
 /// UV-mapped icosphere for the slice path.

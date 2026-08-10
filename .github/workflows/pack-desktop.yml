@@ -1,0 +1,99 @@
+# One-click desktop binaries — Windows · macOS · Ubuntu
+#
+# Idea adapted from cargo-dist's GitHub matrix (Apache-2.0/MIT):
+#   https://github.com/axodotdev/cargo-dist
+# Shiloh owns this workflow so games stay Christian-owned / bundleable.
+#
+# Trigger: workflow_dispatch (Studio “Pack Desktop” docs) or push tag v*
+
+name: pack-desktop
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  pack:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            triple: x86_64-unknown-linux-gnu
+            folder: ubuntu-x86_64
+            exe_demo: shiloh-demo
+            exe_editor: shiloh-editor
+          - os: windows-2022
+            triple: x86_64-pc-windows-msvc
+            folder: windows-x86_64
+            exe_demo: shiloh-demo.exe
+            exe_editor: shiloh-editor.exe
+          - os: macos-14
+            triple: aarch64-apple-darwin
+            folder: macos-aarch64
+            exe_demo: shiloh-demo
+            exe_editor: shiloh-editor
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - name: Build release binaries
+        shell: bash
+        run: |
+          cargo build --release -p shiloh-demo --bin shiloh-demo --target ${{ matrix.triple }}
+          cargo build --release -p shiloh-editor --bin shiloh-editor --features ui --target ${{ matrix.triple }}
+
+      - name: Stage pack folder
+        shell: bash
+        run: |
+          mkdir -p dist/desktop/${{ matrix.folder }}
+          DEMO="target/${{ matrix.triple }}/release/${{ matrix.exe_demo }}"
+          EDIT="target/${{ matrix.triple }}/release/${{ matrix.exe_editor }}"
+          # Host-dir fallback when cargo omits triple for native
+          [[ -f "$DEMO" ]] || DEMO="target/release/${{ matrix.exe_demo }}"
+          [[ -f "$EDIT" ]] || EDIT="target/release/${{ matrix.exe_editor }}"
+          cp "$DEMO" "dist/desktop/${{ matrix.folder }}/"
+          cp "$EDIT" "dist/desktop/${{ matrix.folder }}/"
+          cp packaging/icons/shiloh3d.png "dist/desktop/${{ matrix.folder }}/" || true
+          cp packaging/icons/shiloh3d.ico "dist/desktop/${{ matrix.folder }}/" || true
+          cp logo_shiloh3d.png "dist/desktop/${{ matrix.folder }}/" || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shiloh-${{ matrix.folder }}
+          path: dist/desktop/${{ matrix.folder }}/
+
+  merge-readme:
+    needs: pack
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/desktop-artifacts
+      - name: Write combined README
+        run: |
+          mkdir -p dist/desktop
+          cat > dist/desktop/README.md <<'EOF'
+          # Shiloh3D desktop pack (CI)
+
+          Artifacts: Windows · macOS · Ubuntu — same product icon as `logo_shiloh3d.png`.
+
+          Built by `.github/workflows/pack-desktop.yml` (cargo-dist–style matrix; Shiloh-owned YAML).
+          EOF
+          find dist/desktop-artifacts -type f | sort
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shiloh-desktop-all
+          path: dist/desktop-artifacts/

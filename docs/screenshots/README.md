@@ -1,19 +1,16 @@
 # Screenshots
 
-Place engine captures here. Filenames are referenced from [`../PREMIUM.md`](../PREMIUM.md).
+Engine and Studio captures referenced from the root [`README.md`](../../README.md) and [`../PREMIUM.md`](../PREMIUM.md).
 
-| File | Suggested content |
+| File | Content |
 |---|---|
-| `01-editor-viewport.png` | Main editor 3D viewport with grid / gizmo |
-| `02-scene-hierarchy.png` | Hierarchy panel with sample entities |
-| `03-inspector.png` | Component inspector for a selected entity |
-| `04-play-mode.png` | Play-in-editor or standalone game view |
-| `05-render-graph.png` | Debug overlay of render passes |
-| `06-pbr-sample.png` | Lit mesh / material showcase |
-| `07-animation.png` | Skinned mesh or skeleton debug |
-| `08-physics.png` | Collider / rigid body debug draw |
-| `09-cli-project.png` | Terminal or project folder after `shiloh-cli new` |
+| `01-editor-viewport.png` | Shiloh Studio — Forest Valley live viewport (**pre-alpha**) |
+| `editor-forest-valley-e2e.png` | Compete / E2E valley capture |
+| `gate-latest.png` | Latest `visual_gate` still |
+| `gate-report.md` | Automated pass/fail vs FirstGoal |
 
-**Status:** branded placeholder PNGs checked in — replace with real captures when the viewport ships.
+**Status:** real editor captures checked in. Outdoor look is still **work in progress** (not FirstGoal photoreal yet).
+
+Design target mockup: [`../references/firstgoal-studio-editor.png`](../references/firstgoal-studio-editor.png)
 
 Recommended resolution: **1920×1080** or **1280×720**, PNG.

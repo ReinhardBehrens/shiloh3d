@@ -1,5 +1,5 @@
-//! CLI library surface (shared helpers for automation).
+//! Shiloh3D CLI library — packaging helpers.
 
-#![forbid(unsafe_code)]
+pub mod pack;
 
-// Binary-first crate; library kept for future embedding of tools.
+pub use pack::{DESKTOP_TARGETS, DEFAULT_BINS, DesktopTarget, PackOptions, pack_desktop};

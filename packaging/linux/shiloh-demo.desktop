@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Shiloh3D Demo
+GenericName=3D Engine Demo
+Comment=Shiloh3D engine showcase slice
+Exec=shiloh-demo
+Icon=shiloh3d
+Terminal=false
+Categories=Development;Graphics;3DGraphics;
+StartupNotify=true
+StartupWMClass=shiloh3d-studio
+Keywords=shiloh;3d;demo;engine;

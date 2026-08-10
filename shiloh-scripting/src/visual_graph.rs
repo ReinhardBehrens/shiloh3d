@@ -46,6 +46,42 @@ pub struct VisualExecStep {
     pub kind: VisualNodeKind,
 }
 
+/// Coarse action kinds inferred from Action node titles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VisualAction {
+    Spawn,
+    SetTranslation,
+    EmitSignal,
+    PlayAudio,
+    Nop,
+}
+
+/// Map executed Action steps to [`VisualAction`]s by title keywords.
+pub fn actions_from_steps(steps: &[VisualExecStep]) -> Vec<VisualAction> {
+    steps
+        .iter()
+        .filter(|s| s.kind == VisualNodeKind::Action)
+        .map(|s| {
+            let t = s.title.to_ascii_lowercase();
+            if t.contains("spawn") {
+                VisualAction::Spawn
+            } else if t.contains("translat")
+                || t.split(|c: char| !c.is_ascii_alphanumeric())
+                    .any(|w| w == "move")
+            {
+                // "translat" matches both Translate and Set Translation.
+                VisualAction::SetTranslation
+            } else if t.contains("signal") {
+                VisualAction::EmitSignal
+            } else if t.contains("audio") || t.contains("sound") {
+                VisualAction::PlayAudio
+            } else {
+                VisualAction::Nop
+            }
+        })
+        .collect()
+}
+
 impl VisualGraph {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
@@ -150,5 +186,61 @@ mod tests {
         let steps = g.execute(Some("On Begin Play"));
         assert_eq!(steps.len(), 2);
         assert_eq!(steps[1].title, "Play Sound");
+        assert_eq!(
+            actions_from_steps(&steps),
+            vec![VisualAction::PlayAudio]
+        );
+    }
+
+    #[test]
+    fn actions_from_titles() {
+        let steps = vec![
+            VisualExecStep {
+                node_id: 1,
+                title: "On Begin Play".into(),
+                kind: VisualNodeKind::Event,
+            },
+            VisualExecStep {
+                node_id: 2,
+                title: "Spawn Actor".into(),
+                kind: VisualNodeKind::Action,
+            },
+            VisualExecStep {
+                node_id: 3,
+                title: "Set Translation".into(),
+                kind: VisualNodeKind::Action,
+            },
+            VisualExecStep {
+                node_id: 4,
+                title: "Move To".into(),
+                kind: VisualNodeKind::Action,
+            },
+            VisualExecStep {
+                node_id: 5,
+                title: "Emit Signal".into(),
+                kind: VisualNodeKind::Action,
+            },
+            VisualExecStep {
+                node_id: 6,
+                title: "Play Audio Clip".into(),
+                kind: VisualNodeKind::Action,
+            },
+            VisualExecStep {
+                node_id: 7,
+                title: "Custom Thing".into(),
+                kind: VisualNodeKind::Action,
+            },
+        ];
+        assert_eq!(
+            actions_from_steps(&steps),
+            vec![
+                VisualAction::Spawn,
+                VisualAction::SetTranslation,
+                VisualAction::SetTranslation,
+                VisualAction::EmitSignal,
+                VisualAction::PlayAudio,
+                VisualAction::Nop,
+            ]
+        );
     }
 }

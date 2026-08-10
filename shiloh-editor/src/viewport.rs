@@ -24,6 +24,9 @@ use shiloh_scene::{Camera, GlobalTransform, ProjectionKind, Scene, Transform};
 use crate::gltf_mesh::to_slice_mesh;
 use crate::selection::SelectMode;
 
+#[cfg(feature = "ui")]
+use shiloh_ray::{RayScene, camera_ray_from_ndc};
+
 /// Events produced by viewport interaction — handled by [`EditorApp`](crate::ui::EditorApp).
 #[derive(Debug, Clone)]
 pub enum ViewportEvent {
@@ -35,6 +38,51 @@ pub enum ViewportEvent {
     Translate {
         delta: Vec3,
     },
+    /// Y-axis rotate (radians) while Rotate tool dragging.
+    RotateY {
+        radians: f32,
+    },
+    /// Uniform scale factor delta while Scale tool dragging.
+    ScaleUniform {
+        factor: f32,
+    },
+    /// Axis-constrained translate (Godot/UE gizmo handle).
+    TranslateAxis {
+        axis: GizmoAxis,
+        delta: f32,
+    },
+    /// Axis-constrained rotate (radians about axis).
+    RotateAxis {
+        axis: GizmoAxis,
+        radians: f32,
+    },
+    /// Axis-constrained non-uniform scale factor.
+    ScaleAxis {
+        axis: GizmoAxis,
+        factor: f32,
+    },
+    /// Alt+drag duplicate-and-move (Unreal).
+    DuplicateTranslate {
+        delta: Vec3,
+    },
+    /// Landscape sculpt at world XZ (positive = raise).
+    TerrainSculpt {
+        world: Vec3,
+        strength: f32,
+        radius: f32,
+    },
+    /// Landscape paint layer 0..3.
+    TerrainPaint {
+        world: Vec3,
+        layer: u8,
+        strength: f32,
+        radius: f32,
+    },
+    /// Foliage paint / erase at XZ.
+    FoliagePaint {
+        world: Vec3,
+        erase: bool,
+    },
     /// Asset-palette place mode: primary click hit the ground plane.
     PlaceAt {
         world: Vec3,
@@ -43,12 +91,28 @@ pub enum ViewportEvent {
     ExitPlaceMode,
 }
 
-/// Viewport transform tool — Godot 3D toolbar Select / Move (Rotate/Scale later).
+/// RGB transform gizmo axis — Borrowed from Godot 4 TranslationGizmo / Unreal WER.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GizmoAxis {
+    X,
+    Y,
+    Z,
+}
+
+/// Viewport transform / world tool — Godot QWER + Unreal Modes + Blender-accurate ray.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewportTool {
     #[default]
     Select,
     Move,
+    Rotate,
+    Scale,
+    /// Borrowed from Unreal Engine: Landscape Mode (Shift+2).
+    Landscape,
+    /// Borrowed from Unreal Engine: Foliage Mode (Shift+3).
+    Foliage,
+    /// Borrowed from Blender: mesh ray pick via `shiloh-ray` / Parry.
+    RayAccurate,
 }
 
 /// One pickable scene node — Godot-style AABB hit (not origin-only).
@@ -69,6 +133,10 @@ pub struct ViewportCamera {
     dragging_orbit: bool,
     dragging_pan: bool,
     dragging_move: bool,
+    /// Active gizmo axis while dragging (None = free XZ / screen).
+    gizmo_axis: Option<GizmoAxis>,
+    /// Alt was held when drag started → duplicate-move.
+    alt_duplicate: bool,
     last_pointer: Option<egui::Pos2>,
     drag_start: Option<egui::Pos2>,
 }
@@ -83,6 +151,8 @@ impl Default for ViewportCamera {
             dragging_orbit: false,
             dragging_pan: false,
             dragging_move: false,
+            gizmo_axis: None,
+            alt_duplicate: false,
             last_pointer: None,
             drag_start: None,
         }
@@ -90,6 +160,12 @@ impl Default for ViewportCamera {
 }
 
 impl ViewportCamera {
+    /// Borrowed from Unreal / Godot: F focuses the camera on selection AABB center.
+    pub fn focus_selection(&mut self, center: Vec3, radius: f32) {
+        self.focus = center;
+        self.distance = (radius * 3.5).clamp(6.0, 80.0);
+    }
+
     pub fn to_camera(&self, aspect: f32) -> Camera {
         let eye = self.focus
             + Vec3::new(
@@ -131,8 +207,13 @@ impl ViewportCamera {
         rect: egui::Rect,
         place_mode: bool,
         tool: ViewportTool,
+        terrain: Option<&shiloh_scene::TerrainChunk>,
+        grid_snap: bool,
+        snap_size: f32,
+        paint_layer: u8,
+        landscape_paint: bool,
     ) -> Option<ViewportEvent> {
-        let g_key = ui.input(|i| i.key_down(egui::Key::G));
+        // Borrowed from Godot 4: W Move tool drag (G grab removed — G is Unreal Game view).
         let mut event = None;
 
         // --- Camera navigation (Godot: MMB orbit, RMB pan) ---
@@ -147,44 +228,77 @@ impl ViewportCamera {
             self.drag_start = self.last_pointer;
         }
 
-        // --- Translate drag (Godot: G grab / Move tool / drag near selection) ---
+        // --- Translate / rotate / scale drag ---
         if resp.drag_started_by(egui::PointerButton::Primary) {
             self.last_pointer = resp.interact_pointer_pos();
             self.drag_start = self.last_pointer;
+            self.alt_duplicate = ui.input(|i| i.modifiers.alt);
+            self.gizmo_axis = self.last_pointer.and_then(|p| {
+                selection_gizmo_axis(p, selection, pickables, camera, rect, tool)
+            });
+            let transform_tool = matches!(
+                tool,
+                ViewportTool::Move | ViewportTool::Rotate | ViewportTool::Scale
+            );
             let near_selected = !place_mode
+                && transform_tool
                 && self.last_pointer.is_some_and(|p| {
-                    // Godot Move tool: wider grab around selection / gizmo.
-                    if tool == ViewportTool::Move {
-                        pointer_near_selection(p, selection, pickables, camera, rect)
-                            || pick_entity_aabb(p, pickables, camera, rect)
-                                .is_some_and(|e| selection.iter().any(|&s| s == e))
-                    } else {
-                        pointer_near_selection(p, selection, pickables, camera, rect)
-                    }
+                    self.gizmo_axis.is_some()
+                        || pointer_near_selection(p, selection, pickables, camera, rect)
+                        || pick_entity_aabb(p, pickables, camera, rect)
+                            .is_some_and(|e| selection.iter().any(|&s| s == e))
                 });
-            if !place_mode && (g_key || near_selected) {
+            if !place_mode && near_selected {
                 self.dragging_move = true;
             }
         }
 
-        // --- Click select / place (Godot short-click; must NOT wait for drag_stopped) ---
-        // egui: Sense::click_and_drag sets `clicked` on short clicks and never
-        // starts a drag — the old drag_stopped path never fired PlaceAt/Select.
+        // --- Click select / place / landscape / foliage ---
         if resp.clicked_by(egui::PointerButton::Primary) && !self.dragging_move {
             if let Some(pos) = resp.interact_pointer_pos() {
+                let shift = ui.input(|i| i.modifiers.shift);
+                let pick = |p: egui::Pos2| -> Option<Entity> {
+                    if tool == ViewportTool::RayAccurate {
+                        pick_entity_ray(p, pickables, camera, rect)
+                    } else {
+                        pick_entity_aabb(p, pickables, camera, rect)
+                    }
+                };
                 if place_mode {
-                    // Prefer pick → exit brush (Godot: click existing node while placing).
-                    if let Some(entity) = pick_entity_aabb(pos, pickables, camera, rect) {
+                    if let Some(entity) = pick(pos) {
                         event = Some(ViewportEvent::Select {
                             entity,
                             mode: select_mode_from_input(ui),
                         });
-                        // Also signal brush clear — handled as ExitPlaceMode after Select
-                        // by emitting ExitPlaceMode when we want both; ui clears on Select.
-                    } else if let Some(world) = ray_hit_ground(pos, camera, rect) {
+                    } else if let Some(world) = ray_hit_ground(pos, camera, rect, terrain) {
                         event = Some(ViewportEvent::PlaceAt { world });
                     }
-                } else if let Some(entity) = pick_entity_aabb(pos, pickables, camera, rect) {
+                } else if tool == ViewportTool::Landscape {
+                    if let Some(world) = ray_hit_ground(pos, camera, rect, terrain) {
+                        if landscape_paint {
+                            event = Some(ViewportEvent::TerrainPaint {
+                                world,
+                                layer: paint_layer,
+                                strength: 0.55,
+                                radius: 3.5,
+                            });
+                        } else {
+                            let strength = if shift { -0.35 } else { 0.35 };
+                            event = Some(ViewportEvent::TerrainSculpt {
+                                world,
+                                strength,
+                                radius: 3.5,
+                            });
+                        }
+                    }
+                } else if tool == ViewportTool::Foliage {
+                    if let Some(world) = ray_hit_ground(pos, camera, rect, terrain) {
+                        event = Some(ViewportEvent::FoliagePaint {
+                            world,
+                            erase: shift,
+                        });
+                    }
+                } else if let Some(entity) = pick(pos) {
                     event = Some(ViewportEvent::Select {
                         entity,
                         mode: select_mode_from_input(ui),
@@ -200,6 +314,8 @@ impl ViewportCamera {
             self.dragging_orbit = false;
             self.dragging_pan = false;
             self.dragging_move = false;
+            self.gizmo_axis = None;
+            self.alt_duplicate = false;
             self.last_pointer = None;
             self.drag_start = None;
         }
@@ -208,9 +324,49 @@ impl ViewportCamera {
             if let Some(prev) = self.last_pointer {
                 let delta = pos - prev;
                 if self.dragging_move {
-                    let world_delta = self.xz_delta_from_screen(delta);
-                    if world_delta.length_squared() > 1e-8 {
-                        event = Some(ViewportEvent::Translate { delta: world_delta });
+                    // Borrowed from Unreal: Ctrl temporarily disables snap.
+                    let free = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
+                    let snap = grid_snap && !free;
+                    match tool {
+                        ViewportTool::Rotate => {
+                            let radians = delta.x * 0.01;
+                            event = Some(match self.gizmo_axis {
+                                Some(axis) => ViewportEvent::RotateAxis { axis, radians },
+                                None => ViewportEvent::RotateY { radians },
+                            });
+                        }
+                        ViewportTool::Scale => {
+                            let f = 1.0 + (-delta.y) * 0.005;
+                            if f > 0.01 {
+                                event = Some(match self.gizmo_axis {
+                                    Some(axis) => ViewportEvent::ScaleAxis { axis, factor: f },
+                                    None => ViewportEvent::ScaleUniform { factor: f },
+                                });
+                            }
+                        }
+                        _ => {
+                            let mut world_delta = match self.gizmo_axis {
+                                Some(GizmoAxis::X) => {
+                                    Vec3::X * self.xz_delta_from_screen(delta).x
+                                }
+                                Some(GizmoAxis::Y) => Vec3::Y * (-delta.y) * self.distance * 0.0025,
+                                Some(GizmoAxis::Z) => {
+                                    Vec3::Z * self.xz_delta_from_screen(delta).z
+                                }
+                                None => self.xz_delta_from_screen(delta),
+                            };
+                            if snap && snap_size > 1e-6 {
+                                world_delta = snap_vec(world_delta, snap_size);
+                            }
+                            if world_delta.length_squared() > 1e-8 {
+                                // Borrowed from Unreal Engine: Alt+drag duplicate-and-move.
+                                event = Some(if self.alt_duplicate {
+                                    ViewportEvent::DuplicateTranslate { delta: world_delta }
+                                } else {
+                                    ViewportEvent::Translate { delta: world_delta }
+                                });
+                            }
+                        }
                     }
                 } else if self.dragging_orbit {
                     self.yaw += delta.x * 0.005;
@@ -220,9 +376,41 @@ impl ViewportCamera {
                     let up = Vec3::Y;
                     let scale = self.distance * 0.0025;
                     self.focus += right * (-delta.x * scale) + up * (delta.y * scale);
+                } else if matches!(tool, ViewportTool::Landscape | ViewportTool::Foliage)
+                    && resp.dragged_by(egui::PointerButton::Primary)
+                {
+                    if let Some(world) = ray_hit_ground(pos, camera, rect, terrain) {
+                        let shift = ui.input(|i| i.modifiers.shift);
+                        event = if tool == ViewportTool::Landscape {
+                            if landscape_paint {
+                                Some(ViewportEvent::TerrainPaint {
+                                    world,
+                                    layer: paint_layer,
+                                    strength: 0.35,
+                                    radius: 3.5,
+                                })
+                            } else {
+                                Some(ViewportEvent::TerrainSculpt {
+                                    world,
+                                    strength: if shift { -0.2 } else { 0.2 },
+                                    radius: 3.5,
+                                })
+                            }
+                        } else {
+                            Some(ViewportEvent::FoliagePaint {
+                                world,
+                                erase: shift,
+                            })
+                        };
+                    }
                 }
             }
-            if self.dragging_orbit || self.dragging_pan || self.dragging_move {
+            if self.dragging_orbit
+                || self.dragging_pan
+                || self.dragging_move
+                || matches!(tool, ViewportTool::Landscape | ViewportTool::Foliage)
+                    && resp.dragged_by(egui::PointerButton::Primary)
+            {
                 self.last_pointer = Some(pos);
             }
         }
@@ -280,6 +468,30 @@ fn pick_entity_aabb(
         }
     }
     best.map(|(e, _)| e)
+}
+
+/// Borrowed from Blender mesh pick — Parry TriMesh/BVH via `shiloh-ray`.
+fn pick_entity_ray(
+    pointer: egui::Pos2,
+    pickables: &[Pickable],
+    camera: &Camera,
+    rect: egui::Rect,
+) -> Option<Entity> {
+    if rect.width() < 1.0 || rect.height() < 1.0 {
+        return pick_entity_aabb(pointer, pickables, camera, rect);
+    }
+    let ndc_x = ((pointer.x - rect.left()) / rect.width()) * 2.0 - 1.0;
+    let ndc_y = 1.0 - ((pointer.y - rect.top()) / rect.height()) * 2.0;
+    let (origin, dir) = camera_ray_from_ndc(camera.view_proj(), ndc_x, ndc_y);
+    let mut scene = RayScene::default();
+    for (i, p) in pickables.iter().enumerate() {
+        let world = Mat4::from_translation(p.center - Vec3::new(0.0, p.half.y, 0.0));
+        scene.insert_box(i as u64, world, p.half);
+    }
+    scene
+        .cast(origin, dir, 500.0)
+        .and_then(|hit| pickables.get(hit.id as usize).map(|p| p.entity))
+        .or_else(|| pick_entity_aabb(pointer, pickables, camera, rect))
 }
 
 fn screen_dist_to_aabb(pointer: egui::Pos2, p: Pickable, camera: &Camera, rect: egui::Rect) -> f32 {
@@ -510,6 +722,13 @@ impl SceneViewport {
         fog_enabled: bool,
         place_brush_name: Option<&str>,
         tool: &mut ViewportTool,
+        terrain: Option<&shiloh_scene::TerrainChunk>,
+        foliage: Option<&shiloh_scene::FoliageLayer>,
+        grid_snap: bool,
+        snap_size: f32,
+        paint_layer: u8,
+        landscape_paint: bool,
+        game_view: bool,
     ) -> Vec<ViewportEvent> {
         let mut events = Vec::new();
         let available = ui.available_size();
@@ -558,6 +777,40 @@ impl SceneViewport {
             Quat::IDENTITY,
             Vec3::new(0.0, -0.06, 0.0),
         ));
+
+        // Landscape Mode: displace a coarse grid of ground tiles from TerrainChunk.
+        if let Some(terrain) = terrain {
+            push_terrain_visual(terrain, &mut ground_mats, &mut rock_mats);
+        }
+        // Foliage Mode: draw painted instances into the live viewport.
+        if let Some(layer) = foliage {
+            for inst in &layer.instances {
+                let yaw = Quat::from_rotation_y(inst.yaw);
+                let pos = Vec3::from_array(inst.translation);
+                let s = inst.scale;
+                let typ = inst.typ.to_ascii_lowercase();
+                if typ.contains("rock") {
+                    rock_mats.push(Mat4::from_scale_rotation_translation(
+                        Vec3::new(0.9, 0.7, 0.85) * s,
+                        yaw,
+                        pos,
+                    ));
+                } else {
+                    let h = if typ.contains("pine") {
+                        4.0
+                    } else if typ.contains("birch") {
+                        3.2
+                    } else {
+                        1.8
+                    };
+                    foliage_mats.push(Mat4::from_scale_rotation_translation(
+                        Vec3::new(1.15, h, 1.15) * s,
+                        yaw,
+                        pos,
+                    ));
+                }
+            }
+        }
 
         let mut entities = Vec::new();
         scene.world.for_each::<Transform>(|e, _| entities.push(e));
@@ -712,6 +965,11 @@ impl SceneViewport {
             rect,
             place_brush_name.is_some(),
             *tool,
+            terrain,
+            grid_snap,
+            snap_size,
+            paint_layer,
+            landscape_paint,
         ) {
             // Selecting while placing exits the brush (Godot paint-tool behaviour).
             if place_brush_name.is_some() {
@@ -742,26 +1000,26 @@ impl SceneViewport {
                 camera_pos: camera.eye,
                 time: t,
                 sun_dir,
-                sun_color: Vec3::new(1.0, 0.92, 0.75) * 1.35,
-                ambient: Vec3::new(0.14, 0.16, 0.20),
-                fog_color: Vec3::new(0.55, 0.68, 0.78),
+                sun_color: Vec3::new(1.25, 0.88, 0.58) * 1.55,
+                ambient: Vec3::new(0.10, 0.12, 0.16),
+                fog_color: Vec3::new(0.72, 0.58, 0.45),
                 fog_density,
                 light_view_proj,
                 point0_pos: Vec3::new(6.0, 4.0, 3.0),
                 point0_range: 22.0,
-                point0_color: Vec3::new(0.55, 0.72, 1.0) * 0.85,
+                point0_color: Vec3::new(0.45, 0.62, 1.0) * 0.75,
                 point1_pos: Vec3::new(-7.0, 3.0, -2.0),
                 point1_range: 18.0,
-                point1_color: Vec3::new(1.0, 0.55, 0.35) * 0.55,
+                point1_color: Vec3::new(1.1, 0.5, 0.28) * 0.75,
                 spot_pos: Vec3::new(0.0, 10.0, 2.0),
                 spot_range: 28.0,
                 spot_dir: Vec3::new(0.1, -1.0, 0.15).normalize(),
                 spot_inner_cos: 0.92,
                 spot_outer_cos: 0.72,
-                spot_color: Vec3::new(1.0, 0.95, 0.8) * 1.4,
-                exposure: 1.05,
-                contrast: 1.15,
-                saturation: 1.3,
+                spot_color: Vec3::new(1.12, 0.92, 0.7) * 1.5,
+                exposure: 1.12,
+                contrast: 1.22,
+                saturation: 1.28,
                 cube_instances: &cube_mats,
                 sphere_instances: &sphere_mats,
                 extra_instances: &[],
@@ -814,39 +1072,46 @@ impl SceneViewport {
         }
 
         let painter = ui.painter_at(rect);
-        let multi = selection.len() > 1;
-        let wire_color = if multi {
-            Color32::from_rgb(80, 220, 230)
-        } else {
-            Color32::from_rgb(255, 180, 60)
-        };
-        for &sel in selection {
-            let Some(name) = entity_names.get(&sel).map(|s| s.as_str()) else {
-                continue;
+        // Borrowed from Unreal Engine: Game view (G) hides gizmos/helpers.
+        if !game_view {
+            let multi = selection.len() > 1;
+            let wire_color = if multi {
+                Color32::from_rgb(80, 220, 230)
+            } else {
+                Color32::from_rgb(255, 180, 60)
             };
-            let Some(local) = scene.world.get::<Transform>(sel) else {
-                continue;
-            };
-            let pos = scene
-                .world
-                .get::<GlobalTransform>(sel)
-                .map(|g| g.0.w_axis.truncate())
-                .unwrap_or(local.translation);
-            let half = entity_half_extents(name, local.scale);
-            let center = aabb_center_on_ground(pos, half);
-            // Godot Node3D selection AABB (wireframe).
-            draw_aabb_wireframe(&painter, center, half, &camera, rect, wire_color);
-            // Godot TranslationGizmo — RGB axes at selection origin.
-            if *tool == ViewportTool::Move || selection.len() == 1 {
-                draw_move_gizmo(&painter, pos, &camera, rect);
+            for &sel in selection {
+                let Some(name) = entity_names.get(&sel).map(|s| s.as_str()) else {
+                    continue;
+                };
+                let Some(local) = scene.world.get::<Transform>(sel) else {
+                    continue;
+                };
+                let pos = scene
+                    .world
+                    .get::<GlobalTransform>(sel)
+                    .map(|g| g.0.w_axis.truncate())
+                    .unwrap_or(local.translation);
+                let half = entity_half_extents(name, local.scale);
+                let center = aabb_center_on_ground(pos, half);
+                // Godot Node3D selection AABB (wireframe).
+                draw_aabb_wireframe(&painter, center, half, &camera, rect, wire_color);
+                // Godot/UE transform gizmos — RGB axes at selection origin.
+                match *tool {
+                    ViewportTool::Move => draw_move_gizmo(&painter, pos, &camera, rect),
+                    ViewportTool::Rotate => draw_rotate_gizmo(&painter, pos, &camera, rect),
+                    ViewportTool::Scale => draw_scale_gizmo(&painter, pos, &camera, rect),
+                    _ if selection.len() == 1 => draw_move_gizmo(&painter, pos, &camera, rect),
+                    _ => {}
+                }
             }
-        }
 
-        // Godot place-preview: ghost ring on ground under cursor while brushing.
-        if place_brush_name.is_some() {
-            if let Some(pointer) = resp.hover_pos() {
-                if let Some(hit) = ray_hit_ground(pointer, &camera, rect) {
-                    draw_place_ghost(&painter, hit, &camera, rect);
+            // Godot place-preview: ghost ring on ground under cursor while brushing.
+            if place_brush_name.is_some() {
+                if let Some(pointer) = resp.hover_pos() {
+                    if let Some(hit) = ray_hit_ground(pointer, &camera, rect, terrain) {
+                        draw_place_ghost(&painter, hit, &camera, rect);
+                    }
                 }
             }
         }
@@ -862,14 +1127,20 @@ impl SceneViewport {
 fn draw_tool_strip(ui: &mut egui::Ui, rect: egui::Rect, tool: &mut ViewportTool) {
     let strip = egui::Rect::from_center_size(
         egui::pos2(rect.center().x, rect.top() + 20.0),
-        Vec2::new(280.0, 26.0),
+        Vec2::new(520.0, 26.0),
     );
     ui.scope_builder(egui::UiBuilder::new().max_rect(strip), |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
+            // Borrowed from Godot 4: QWER · Borrowed from Unreal: Landscape/Foliage · Blender: Ray.
             for (label, value) in [
                 ("Select", ViewportTool::Select),
                 ("Move", ViewportTool::Move),
+                ("Rotate", ViewportTool::Rotate),
+                ("Scale", ViewportTool::Scale),
+                ("Land", ViewportTool::Landscape),
+                ("Foliage", ViewportTool::Foliage),
+                ("Ray", ViewportTool::RayAccurate),
             ] {
                 let selected = *tool == value;
                 if ui
@@ -879,9 +1150,6 @@ fn draw_tool_strip(ui: &mut egui::Ui, rect: egui::Rect, tool: &mut ViewportTool)
                     *tool = value;
                 }
             }
-            ui.add_enabled(false, egui::Label::new(
-                egui::RichText::new("Rotate  Scale  Snap").weak().small(),
-            ));
         });
     });
 }
@@ -913,6 +1181,106 @@ fn draw_move_gizmo(painter: &egui::Painter, origin: Vec3, camera: &Camera, rect:
         }
     }
     painter.circle_filled(o, 5.0, Color32::from_rgb(240, 240, 245));
+}
+
+/// Borrowed from Godot 4: rotation gizmo rings (screen-projected axis tips).
+fn draw_rotate_gizmo(painter: &egui::Painter, origin: Vec3, camera: &Camera, rect: egui::Rect) {
+    let Some(o) = project_to_viewport(origin, camera, rect) else {
+        return;
+    };
+    let r = 1.35_f32;
+    let axes = [
+        (GizmoAxis::X, Color32::from_rgb(230, 70, 70)),
+        (GizmoAxis::Y, Color32::from_rgb(80, 210, 90)),
+        (GizmoAxis::Z, Color32::from_rgb(70, 130, 240)),
+    ];
+    for (axis, color) in axes {
+        let dir = match axis {
+            GizmoAxis::X => Vec3::X,
+            GizmoAxis::Y => Vec3::Y,
+            GizmoAxis::Z => Vec3::Z,
+        };
+        if let Some(tip) = project_to_viewport(origin + dir * r, camera, rect) {
+            painter.circle_stroke(tip, 6.0, egui::Stroke::new(2.0_f32, color));
+            painter.line_segment([o, tip], egui::Stroke::new(1.5_f32, color));
+        }
+    }
+    painter.circle_stroke(o, 10.0, egui::Stroke::new(1.5_f32, Color32::from_rgb(220, 220, 230)));
+}
+
+/// Borrowed from Godot 4: scale gizmo cubes on axes.
+fn draw_scale_gizmo(painter: &egui::Painter, origin: Vec3, camera: &Camera, rect: egui::Rect) {
+    let Some(o) = project_to_viewport(origin, camera, rect) else {
+        return;
+    };
+    let axis_len = 1.5_f32;
+    let axes = [
+        (Vec3::X * axis_len, Color32::from_rgb(230, 70, 70)),
+        (Vec3::Y * axis_len, Color32::from_rgb(80, 210, 90)),
+        (Vec3::Z * axis_len, Color32::from_rgb(70, 130, 240)),
+    ];
+    for (delta, color) in axes {
+        if let Some(tip) = project_to_viewport(origin + delta, camera, rect) {
+            painter.line_segment([o, tip], egui::Stroke::new(2.5_f32, color));
+            painter.rect_filled(
+                egui::Rect::from_center_size(tip, Vec2::splat(8.0)),
+                1.0,
+                color,
+            );
+        }
+    }
+    painter.rect_filled(
+        egui::Rect::from_center_size(o, Vec2::splat(9.0)),
+        1.0,
+        Color32::from_rgb(240, 240, 245),
+    );
+}
+
+fn snap_vec(v: Vec3, size: f32) -> Vec3 {
+    let s = size.max(1e-6);
+    Vec3::new(
+        (v.x / s).round() * s,
+        (v.y / s).round() * s,
+        (v.z / s).round() * s,
+    )
+}
+
+fn selection_gizmo_axis(
+    pointer: egui::Pos2,
+    selection: &[Entity],
+    pickables: &[Pickable],
+    camera: &Camera,
+    rect: egui::Rect,
+    tool: ViewportTool,
+) -> Option<GizmoAxis> {
+    if !matches!(
+        tool,
+        ViewportTool::Move | ViewportTool::Rotate | ViewportTool::Scale
+    ) {
+        return None;
+    }
+    let origin = selection.first().and_then(|&sel| {
+        pickables
+            .iter()
+            .find(|p| p.entity == sel)
+            .map(|p| p.center - Vec3::new(0.0, p.half.y, 0.0))
+    })?;
+    let tip_dist = 1.55_f32;
+    let candidates = [
+        (GizmoAxis::X, origin + Vec3::X * tip_dist),
+        (GizmoAxis::Y, origin + Vec3::Y * tip_dist),
+        (GizmoAxis::Z, origin + Vec3::Z * tip_dist),
+    ];
+    let mut best: Option<(GizmoAxis, f32)> = None;
+    for (axis, tip) in candidates {
+        if let Some(screen) = project_to_viewport(tip, camera, rect) {
+            let d = (screen - pointer).length();
+            if d <= 12.0 && best.map_or(true, |(_, bd)| d < bd) {
+                best = Some((axis, d));
+            }
+        }
+    }
+    best.map(|(a, _)| a)
 }
 
 fn draw_place_ghost(painter: &egui::Painter, hit: Vec3, camera: &Camera, rect: egui::Rect) {
@@ -974,11 +1342,31 @@ fn draw_viewport_chrome(
     );
 
     let hint = if let Some(name) = place_brush_name {
-        format!("Place: {name} · LMB ground · click object to select · Esc cancel · MMB orbit")
-    } else if tool == ViewportTool::Move {
-        "Move · drag near gizmo/selection · G grab · MMB orbit · RMB pan".into()
+        format!("Place: {name} · LMB ground · Esc cancel · MMB orbit")
     } else {
-        "Select · LMB pick · drag selection to move · MMB orbit · RMB pan · scroll zoom".into()
+        match tool {
+            ViewportTool::Move => {
+                "Move · drag near gizmo · G grab · MMB orbit · RMB pan".into()
+            }
+            ViewportTool::Rotate => {
+                "Rotate · drag selection (Y-axis) · E tool · MMB orbit".into()
+            }
+            ViewportTool::Scale => {
+                "Scale · drag selection · R tool · MMB orbit".into()
+            }
+            ViewportTool::Landscape => {
+                "Landscape · LMB sculpt raise · Shift lower · [ ] brush · Shift+2".into()
+            }
+            ViewportTool::Foliage => {
+                "Foliage · LMB paint · Shift erase · Shift+3".into()
+            }
+            ViewportTool::RayAccurate => {
+                "RayAccurate · Parry mesh pick · Blender-like · Shift+4".into()
+            }
+            ViewportTool::Select => {
+                "Select · LMB pick · Q · Shift+1 · MMB orbit · RMB pan".into()
+            }
+        }
     };
     painter.text(
         rect.left_bottom() + Vec2::new(12.0, -10.0),
@@ -993,8 +1381,13 @@ fn draw_viewport_chrome(
     );
 }
 
-/// Unproject a viewport pointer to the y=0 ground plane (terrain proxy).
-fn ray_hit_ground(pointer: egui::Pos2, camera: &Camera, rect: egui::Rect) -> Option<Vec3> {
+/// Unproject a viewport pointer to the terrain surface (y=0 fallback).
+fn ray_hit_ground(
+    pointer: egui::Pos2,
+    camera: &Camera,
+    rect: egui::Rect,
+    terrain: Option<&shiloh_scene::TerrainChunk>,
+) -> Option<Vec3> {
     if rect.width() < 1.0 || rect.height() < 1.0 {
         return None;
     }
@@ -1021,7 +1414,61 @@ fn ray_hit_ground(pointer: egui::Pos2, camera: &Camera, rect: egui::Rect) -> Opt
     if hit.x.abs() > 200.0 || hit.z.abs() > 200.0 {
         return None;
     }
-    Some(Vec3::new(hit.x, 0.0, hit.z))
+    let y = terrain
+        .map(|chunk| {
+            let half = chunk.world_size * 0.5;
+            chunk.height_at_world(hit.x + half, hit.z + half)
+        })
+        .unwrap_or(0.0);
+    Some(Vec3::new(hit.x, y, hit.z))
+}
+
+/// Coarse heightfield tiles so Landscape sculpt is visible in the slice viewport.
+fn push_terrain_visual(
+    terrain: &shiloh_scene::TerrainChunk,
+    ground_mats: &mut Vec<Mat4>,
+    rock_mats: &mut Vec<Mat4>,
+) {
+    let half = terrain.world_size * 0.5;
+    let step = ((terrain.width.max(2) - 1) / 16).max(1);
+    let cell = terrain.world_size / terrain.width.saturating_sub(1).max(1) as f32;
+    let tile = (cell * step as f32 * 0.95).max(0.4);
+    let mut iz = 0u32;
+    while iz < terrain.height {
+        let mut ix = 0u32;
+        while ix < terrain.width {
+            let (wx0, wz0) = terrain.grid_to_world(ix, iz);
+            let wx = wx0 - half;
+            let wz = wz0 - half;
+            let y = terrain.height_at_world(wx0, wz0);
+            if y.abs() > 0.02 {
+                let i = (iz as usize) * (terrain.width as usize) + (ix as usize);
+                let rockish = terrain
+                    .weights
+                    .get(i)
+                    .map(|w| w[2] + w[1] > 0.45)
+                    .unwrap_or(false);
+                let mat = Mat4::from_scale_rotation_translation(
+                    Vec3::new(tile, (y.abs() * 0.5 + 0.08).min(4.0), tile),
+                    Quat::IDENTITY,
+                    Vec3::new(wx, y * 0.5, wz),
+                );
+                if rockish {
+                    rock_mats.push(mat);
+                } else {
+                    ground_mats.push(mat);
+                }
+            }
+            ix = ix.saturating_add(step);
+            if ix == 0 {
+                break;
+            }
+        }
+        iz = iz.saturating_add(step);
+        if iz == 0 {
+            break;
+        }
+    }
 }
 
 fn project_to_viewport(world: Vec3, camera: &Camera, rect: egui::Rect) -> Option<egui::Pos2> {

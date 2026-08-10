@@ -7,10 +7,6 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 
-[[bin]]
-name = "shiloh-cli"
-path = "src/main.rs"
-
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
@@ -19,6 +15,14 @@ shiloh-assets = { workspace = true }
 shiloh-core = { workspace = true }
 shiloh-editor = { workspace = true }
 tracing.workspace = true
+
+[lib]
+name = "shiloh_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "shiloh-cli"
+path = "src/main.rs"
 
 [lints]
 workspace = true

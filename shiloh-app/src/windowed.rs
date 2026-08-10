@@ -56,9 +56,31 @@ impl ApplicationHandler for WindowHost {
         if self.window.is_some() {
             return;
         }
+        // Same product mark as Studio chrome — OS taskbar / dock / Alt-Tab.
+        // App id / WM_CLASS so Linux start bar matches packaging/linux/*.desktop.
+        // Pattern adapted from winit platform examples (Apache-2.0/MIT):
+        // https://github.com/rust-windowing/winit — WindowAttributesExt{X11,Wayland}::with_name
         let attrs = Window::default_attributes()
             .with_title("Shiloh3D")
-            .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 720.0));
+            .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 720.0))
+            .with_window_icon(Some(crate::icon::window_icon()));
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        ))]
+        let attrs = {
+            use winit::platform::wayland::WindowAttributesExtWayland as Wl;
+            use winit::platform::x11::WindowAttributesExtX11 as X11;
+            let attrs = Wl::with_name(attrs, crate::icon::SHILOH_APP_ID, "");
+            X11::with_class(
+                attrs,
+                crate::icon::SHILOH_APP_ID.to_string(),
+                "Shiloh3D".to_string(),
+            )
+        };
         match event_loop.create_window(attrs) {
             Ok(window) => {
                 let window = Arc::new(window);

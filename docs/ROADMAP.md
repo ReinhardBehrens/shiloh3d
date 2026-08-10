@@ -25,7 +25,7 @@ Shiloh3D is **Christian-owned** and designed to be **bundled into other games** 
 4. **Graphics bar** — aim for excellent PBR and a few Unreal-class *capabilities* (see [QUALITY_BAR.md](QUALITY_BAR.md)), not feature parity.  
 5. **Multiplayer is first-class, not bolted on** — replication types and transport live in-tree early.  
 
-Phases: **Phase 1** core loop · **Phase 2** usable vertical slice · **Phase 3** production workflow · **Phase 4** competitive scale. **Water v2+** is scheduled **last**.
+Phases: **Phase 1** core · **Phase 2** slice · **Phase 3** production exit · **Phase 4** competitive foundations · **Phase 5** world authoring · **Phase Compete** Godot-easy / Unreal-capable visual gate ([PHASE_COMPETE.md](PHASE_COMPETE.md)). **Water v2+** last.
 
 ---
 
@@ -111,6 +111,32 @@ Goal: day-to-day content pipeline for a small team.
 
 ---
 
+## Phase 5 — World Editor & Authoring Scripting — **EXIT DONE** (iterate via Phase Compete)
+
+Goal: Godot-familiar Studio shell + Unreal Landscape/Foliage Modes + Rhai/visual scripting, so Forest_Valley reads as a real outdoor still. UX contract: [EDITOR_UX.md](EDITOR_UX.md).
+
+| Item | Status | Notes |
+|---|---|---|
+| Godot dock shell + layouts | **Done** | Layouts JSON; distraction-free; workspace 3D/Script/Game |
+| Unreal Modes Shift+1..3 | **Done** | Select / Landscape / Foliage + RayAccurate |
+| QWER + axis gizmo + snap | **Done** | Axis handles; grid snap; Ctrl free |
+| Landscape sculpt + 4-layer paint | **Done** | Grass/dirt/rock/sand — no DIY graph |
+| Foliage paint mode | **Done** | Density / erase → live instances |
+| Content Browser drawer | **Done** | Ctrl+Space overlay |
+| Blender glTF peer pipeline | **Done** | Cook docs + `*.shiloh.json` collision/LOD stubs |
+| Rhai scripting host | **Done** | `ScriptComponent` + Play |
+| Visual graph actions | **Done** | Spawn / translate / signal / audio |
+| Valley photoreal still gate | **FAIL (Compete)** | E2E vs FirstGoal crop — greybox must not pass |
+
+**Phase 5 exit criteria**
+
+- [x] Godot user recognizes docks/QWER; Unreal user recognizes Modes + Landscape/Foliage  
+- [x] Outdoor tile without opening a material graph  
+- [x] Play runs Rhai or visual graph on ≥1 entity  
+- [ ] **E2E:** `visual_gate` PASS vs uploaded FirstGoal Studio viewport ([PHASE_COMPETE.md](PHASE_COMPETE.md))  
+
+---
+
 ## Sequence diagram
 
 ```mermaid
@@ -118,15 +144,17 @@ flowchart LR
   P1[Phase 1 Done] --> P2[Phase 2 Done]
   P2 --> P3[Phase 3 Done]
   P3 --> P4[Phase 4 Competitive]
-  P4 --> W2[Water v2+ last]
+  P4 --> P5[Phase 5 World Authoring]
+  P5 --> W2[Water v2+ last]
 ```
 
 ---
 
 ## Current focus
 
-1. Grow Phase 4: chunk asset I/O on partition, gameplay actions in visual VM, real net transport.  
-2. Optional Phase 3 polish: terrain/nav, material editor UI, GPU texture rebind on hot reload.  
-3. **Water v2 last** (depth + planar reflection) — after Phase 4 foundations; see [QUALITY_BAR.md](QUALITY_BAR.md).
+1. **Phase Compete** visual gate nightly — [PHASE_COMPETE.md](PHASE_COMPETE.md) (`visual_gate` example).  
+2. **Phase 5** world editor: Modes, landscape/foliage, Rhai, valley still — [EDITOR_UX.md](EDITOR_UX.md).  
+3. Grow Phase 4 foundations where they don’t block authoring.  
+4. **Water v2 last** — after Compete outdoor still ≥ threshold; see [QUALITY_BAR.md](QUALITY_BAR.md).
 
-Related docs: [HELLO_3D.md](HELLO_3D.md) · [TECH_STACK.md](TECH_STACK.md) · [GRAPHICS.md](GRAPHICS.md) · [QUALITY_BAR.md](QUALITY_BAR.md) · [SLICE_PROGRESS.md](SLICE_PROGRESS.md)
+Related docs: [PHASE_COMPETE.md](PHASE_COMPETE.md) · [EDITOR_UX.md](EDITOR_UX.md) · [HELLO_3D.md](HELLO_3D.md) · [TECH_STACK.md](TECH_STACK.md) · [GRAPHICS.md](GRAPHICS.md) · [QUALITY_BAR.md](QUALITY_BAR.md) · [SLICE_PROGRESS.md](SLICE_PROGRESS.md)

@@ -14,16 +14,20 @@ use shiloh_scene::{
     Camera, Scene, SceneFile, Transform, propagate_transforms, save_scene, set_parent,
 };
 
+use crate::asset_cook::{ensure_cook_stub, AssetCookStub};
 use crate::import::import_from_url;
+use crate::layouts::EditorLayout;
 use crate::node_graph::NodeGraph;
 use crate::play_mode::PlaySession;
 use crate::project::Project;
+use crate::script_editor::ScriptEditorState;
 use crate::selection::{SelectMode, Selection};
-use crate::viewport::{SceneViewport, ViewportEvent, ViewportTool};
+use crate::viewport::{GizmoAxis, SceneViewport, ViewportEvent, ViewportTool};
 use crate::world_items::{
     WorldItem, WorldItemCategory, builtin_world_items, ensure_project_layout,
     scan_project_assets,
 };
+use shiloh_scripting::ScriptComponent;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RightTab {
@@ -35,6 +39,16 @@ enum RightTab {
 enum BottomTab {
     Assets,
     Console,
+    Script,
+}
+
+/// Borrowed from Godot 4: main screen strip (3D / Script / Game).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum WorkspaceMode {
+    #[default]
+    ThreeD,
+    Script,
+    Game,
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +56,13 @@ struct ConsoleLine {
     level: &'static str,
     message: String,
     color: Color32,
+}
+
+#[derive(Debug, Clone)]
+struct SceneTab {
+    name: String,
+    #[allow(dead_code)]
+    path: Option<PathBuf>,
 }
 
 /// Top-level egui application: owns the in-memory scene being edited.
@@ -78,10 +99,42 @@ pub struct EditorApp {
     viewport: SceneViewport,
     /// Selected asset browser item — click viewport ground to place (Esc clears).
     place_brush: Option<WorldItem>,
-    /// Godot-style Select / Move tool for the 3D viewport.
+    /// Godot-style Select / Move / Rotate / Scale + Unreal Landscape/Foliage + RayAccurate.
     viewport_tool: ViewportTool,
+    /// Phase 5 landscape chunk (Unreal Landscape Mode data).
+    terrain: shiloh_scene::TerrainChunk,
+    /// Phase 5 foliage instances (Unreal Foliage Mode data).
+    foliage_layer: shiloh_scene::FoliageLayer,
+    /// Paint layer index 0..3 for Landscape paint (defaults: grass/dirt/rock/sand).
+    terrain_paint_layer: u8,
     /// Brand mark shown in the menu bar (replaces generic gear / settings chrome).
     logo_texture: Option<TextureHandle>,
+    /// Borrowed from Godot 4: 3D / Script / Game workspace strip.
+    workspace: WorkspaceMode,
+    /// Borrowed from Godot 4: hide side docks for distraction-free viewport.
+    distraction_free: bool,
+    /// Borrowed from Unreal Engine: Content Browser drawer (Ctrl+Space).
+    content_drawer_open: bool,
+    /// Borrowed from Unreal Engine: Game view hides gizmos (G).
+    game_view: bool,
+    /// Borrowed from Unreal / Godot: grid snap; Ctrl holds free move.
+    grid_snap: bool,
+    snap_size: f32,
+    outliner_filter: String,
+    /// Type chip: None = all, or "Light" / "Mesh" / "Water" / …
+    outliner_type: Option<&'static str>,
+    inspector_filter: String,
+    left_dock_width: f32,
+    right_dock_width: f32,
+    /// Landscape Mode: false = sculpt height, true = paint weight layer.
+    landscape_paint: bool,
+    scene_tabs: Vec<SceneTab>,
+    active_scene_tab: usize,
+    /// Per-entity script attachments (Phase 5 ScriptComponent).
+    script_components: AHashMap<Entity, ScriptComponent>,
+    /// Designer script IDE (autocomplete + IntelliSense).
+    script_editor: ScriptEditorState,
+    layout_name: String,
 }
 
 impl EditorApp {
@@ -102,7 +155,7 @@ impl EditorApp {
             camera: Some(Camera::default()),
             status: "Ready".into(),
             entity_names: AHashMap::default(),
-            scene_path,
+            scene_path: scene_path.clone(),
             hidden: AHashMap::default(),
             locked: AHashMap::default(),
             right_tab: RightTab::Inspector,
@@ -126,7 +179,37 @@ impl EditorApp {
             viewport: SceneViewport::new(),
             place_brush: None,
             viewport_tool: ViewportTool::Select,
+            terrain: {
+                let mut t = shiloh_scene::TerrainChunk::flat(96, 64.0);
+                // Soft valley undulation so Landscape Mode has readable relief day-one.
+                t.sculpt(32.0, 32.0, 18.0, 0.45);
+                t.sculpt(20.0, 40.0, 10.0, 0.25);
+                t.sculpt(44.0, 22.0, 8.0, -0.15);
+                t
+            },
+            foliage_layer: shiloh_scene::FoliageLayer::default(),
+            terrain_paint_layer: 0,
             logo_texture: None,
+            workspace: WorkspaceMode::ThreeD,
+            distraction_free: false,
+            content_drawer_open: false,
+            game_view: false,
+            grid_snap: true,
+            snap_size: 0.5,
+            outliner_filter: String::new(),
+            outliner_type: None,
+            inspector_filter: String::new(),
+            left_dock_width: 260.0,
+            right_dock_width: 300.0,
+            landscape_paint: false,
+            scene_tabs: vec![SceneTab {
+                name: "Forest_Valley".into(),
+                path: scene_path.clone(),
+            }],
+            active_scene_tab: 0,
+            script_components: AHashMap::default(),
+            script_editor: ScriptEditorState::default(),
+            layout_name: "Default".into(),
         };
 
         app.log("INFO", "Shiloh3D Editor started", Color32::from_rgb(220, 225, 235));
@@ -592,13 +675,91 @@ impl EditorApp {
                 Color32::from_rgb(220, 225, 235),
             );
         } else {
-            self.play.enter_play(&self.scene, self.camera.as_ref());
-            self.status = "Playing (Stop restores edit snapshot)".into();
+            let script = self.load_play_script();
+            self.play
+                .enter_play(&self.scene, self.camera.as_ref(), script.as_deref());
+            self.status = if script.is_some() {
+                "Playing · Rhai on_ready/on_update".into()
+            } else {
+                "Playing (Stop restores edit snapshot)".into()
+            };
             self.log(
                 "INFO",
-                "Play mode entered · live simulation",
+                if script.is_some() {
+                    "Play mode entered · RhaiHost wired"
+                } else {
+                    "Play mode entered · live simulation (no Scripts/*.rhai)"
+                },
                 Color32::from_rgb(90, 200, 120),
             );
+        }
+    }
+
+    /// Prefer `Scripts/demo_spin.rhai`, else first `.rhai` under Scripts/.
+    fn load_play_script(&self) -> Option<String> {
+        let project = self.project.as_ref()?;
+        let scripts = project.root.join("Scripts");
+        let preferred = scripts.join("demo_spin.rhai");
+        if preferred.is_file() {
+            return std::fs::read_to_string(preferred).ok();
+        }
+        let rd = std::fs::read_dir(&scripts).ok()?;
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("rhai") {
+                return std::fs::read_to_string(path).ok();
+            }
+        }
+        None
+    }
+
+    fn apply_script_commands(&mut self, commands: Vec<shiloh_scripting::ScriptCommand>) {
+        use shiloh_scripting::ScriptCommand;
+        for cmd in commands {
+            match cmd {
+                ScriptCommand::Log(msg) => {
+                    self.log("SCRIPT", &msg, Color32::from_rgb(140, 200, 255));
+                }
+                ScriptCommand::SetTranslation {
+                    entity_index,
+                    x,
+                    y,
+                    z,
+                } => {
+                    let mut entities = Vec::new();
+                    self.scene
+                        .world
+                        .for_each::<Transform>(|e, _| entities.push(e));
+                    if let Some(&entity) = entities.get(entity_index as usize) {
+                        if let Some(t) = self.scene.world.get_mut::<Transform>(entity) {
+                            t.translation = glam::Vec3::new(x as f32, y as f32, z as f32);
+                            t.mark_dirty();
+                        }
+                    }
+                    propagate_transforms(&mut self.scene.world);
+                }
+                ScriptCommand::SpawnNamed { name, x, y, z } => {
+                    self.spawn_named(
+                        &name,
+                        glam::Vec3::new(x as f32, y as f32, z as f32),
+                        glam::Vec3::ONE,
+                    );
+                }
+                ScriptCommand::EmitSignal { name } => {
+                    self.log(
+                        "SIGNAL",
+                        &format!("emit `{name}`"),
+                        Color32::from_rgb(255, 200, 120),
+                    );
+                }
+                ScriptCommand::PlayAudio { name } => {
+                    self.log(
+                        "AUDIO",
+                        &format!("play `{name}`"),
+                        Color32::from_rgb(180, 160, 255),
+                    );
+                }
+            }
         }
     }
 
@@ -678,6 +839,19 @@ impl EditorApp {
                 ui.add_space(4.0);
             }
             ui.menu_button("File", |ui| {
+                if ui.button("New Scene").clicked() {
+                    // Borrowed from Godot 4: Scene tabs + New Scene (+ scene).
+                    self.new_scene_tab();
+                    ui.close_menu();
+                }
+                if ui
+                    .button("＋ Scene")
+                    .on_hover_text("Add a new scene tab")
+                    .clicked()
+                {
+                    self.new_scene_tab();
+                    ui.close_menu();
+                }
                 if ui.button("Save Scene").clicked() {
                     self.save_scene();
                     ui.close_menu();
@@ -693,15 +867,46 @@ impl EditorApp {
                     self.bottom_tab = BottomTab::Assets;
                     ui.close_menu();
                 }
+                if ui.button("Cook selected mesh stub").clicked() {
+                    self.cook_selected_stub();
+                    ui.close_menu();
+                }
             });
             ui.menu_button("Edit", |ui| {
                 if ui.button("New Entity").clicked() {
                     self.new_entity();
                     ui.close_menu();
                 }
+                // Borrowed from Godot 4: Ctrl+D duplicate node.
+                if ui.button("Duplicate (Ctrl+D)").clicked() {
+                    self.duplicate_selection(glam::Vec3::new(1.0, 0.0, 0.0));
+                    ui.close_menu();
+                }
             });
             ui.menu_button("Build", |ui| {
-                ui.label("Cook / package — coming soon");
+                ui.label(
+                    RichText::new("One-click desktop pack — Windows · macOS · Ubuntu")
+                        .weak()
+                        .small(),
+                );
+                if ui
+                    .button("Pack Desktop…")
+                    .on_hover_text("Runs packaging/one-click-pack.sh (host OS now; CI fills all three)")
+                    .clicked()
+                {
+                    self.status = "Pack: run `./packaging/one-click-pack.sh` or `shiloh-cli pack`".into();
+                    self.log(
+                        "INFO",
+                        "Desktop pack → dist/desktop/ (see docs/PACKAGING.md)",
+                        Color32::from_rgb(90, 200, 120),
+                    );
+                    ui.close_menu();
+                }
+                ui.separator();
+                if ui.button("Cook selected mesh stub").clicked() {
+                    self.cook_selected_stub();
+                    ui.close_menu();
+                }
             });
             ui.menu_button("Window", |ui| {
                 if ui
@@ -718,6 +923,35 @@ impl EditorApp {
                     self.right_tab = RightTab::Node;
                     ui.close_menu();
                 }
+                ui.separator();
+                // Borrowed from Godot 4: Editor Layouts.
+                ui.menu_button("Layouts", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Name");
+                        ui.text_edit_singleline(&mut self.layout_name);
+                    });
+                    if ui.button("Save Layout").clicked() {
+                        self.save_layout();
+                        ui.close_menu();
+                    }
+                    if let Some(project) = self.project.as_ref() {
+                        for name in EditorLayout::list(&project.root) {
+                            if ui.button(format!("Load “{name}”")).clicked() {
+                                self.load_layout(&name);
+                                ui.close_menu();
+                            }
+                        }
+                    }
+                });
+                if ui
+                    .checkbox(&mut self.distraction_free, "Distraction-free")
+                    .clicked()
+                {
+                    ui.close_menu();
+                }
+                if ui.checkbox(&mut self.grid_snap, "Grid snap").changed() {
+                    // keep open
+                }
             });
             ui.menu_button("Help", |ui| {
                 ui.label("Shiloh3D Studio — Christian-owned Rust engine");
@@ -729,6 +963,28 @@ impl EditorApp {
                     .small(),
                 );
             });
+
+            // Borrowed from Godot 4: 3D · Script · Game workspace strip.
+            for (label, mode) in [
+                ("3D", WorkspaceMode::ThreeD),
+                ("Script", WorkspaceMode::Script),
+                ("Game", WorkspaceMode::Game),
+            ] {
+                if ui
+                    .selectable_label(self.workspace == mode, label)
+                    .clicked()
+                {
+                    self.workspace = mode;
+                    if mode == WorkspaceMode::Script {
+                        self.bottom_tab = BottomTab::Script;
+                        self.right_tab = RightTab::Node;
+                    } else if mode == WorkspaceMode::Game {
+                        self.game_view = true;
+                    } else {
+                        self.game_view = false;
+                    }
+                }
+            }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let name = self
@@ -797,9 +1053,16 @@ impl EditorApp {
             });
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(RichText::new("Forest_Valley.scene").weak());
-                let _ = ui.selectable_label(true, "Viewport");
-                let _ = ui.selectable_label(false, "Lighting");
+                // Borrowed from Godot 4: scene tabs above viewport.
+                for (i, tab) in self.scene_tabs.iter().enumerate().rev() {
+                    let selected = i == self.active_scene_tab;
+                    if ui.selectable_label(selected, &tab.name).clicked() {
+                        self.active_scene_tab = i;
+                    }
+                }
+                if ui.small_button("＋").on_hover_text("New Scene").clicked() {
+                    self.new_scene_tab();
+                }
             });
         });
     }
@@ -811,11 +1074,39 @@ impl EditorApp {
                 ui.label(RichText::new("Forest_Valley").weak().small());
             });
         });
+        // Borrowed from Unreal Engine: World Outliner search + type filters.
+        ui.horizontal(|ui| {
+            ui.label("🔍");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.outliner_filter)
+                    .desired_width(120.0)
+                    .hint_text("Filter…"),
+            );
+        });
+        ui.horizontal(|ui| {
+            for (label, chip) in [
+                ("All", None),
+                ("Light", Some("light")),
+                ("Mesh", Some("mesh")),
+                ("Water", Some("water")),
+                ("Terrain", Some("terrain")),
+            ] {
+                if ui
+                    .selectable_label(self.outliner_type == chip, label)
+                    .clicked()
+                {
+                    self.outliner_type = chip;
+                }
+            }
+        });
         ui.separator();
 
         egui::ScrollArea::vertical().id_salt("outliner").show(ui, |ui| {
             let mut entities = Vec::new();
             self.scene.world.for_each::<Transform>(|e, _| entities.push(e));
+
+            let filter = self.outliner_filter.to_ascii_lowercase();
+            let type_chip = self.outliner_type;
 
             let mut clicked: Option<(Entity, SelectMode)> = None;
             let mut toggle_vis: Option<Entity> = None;
@@ -825,6 +1116,30 @@ impl EditorApp {
                 .iter()
                 .enumerate()
                 .map(|(i, &e)| (e, self.hierarchy_label(i, e)))
+                .filter(|(_, label)| {
+                    let lower = label.to_ascii_lowercase();
+                    if !filter.is_empty() && !lower.contains(&filter) {
+                        return false;
+                    }
+                    match type_chip {
+                        Some("light") => {
+                            lower.contains("light") || lower.contains("sky") || lower.contains("fog")
+                        }
+                        Some("mesh") => {
+                            !(lower.contains("light")
+                                || lower.contains("sky")
+                                || lower.contains("fog")
+                                || lower.contains("water")
+                                || lower.contains("terrain")
+                                || lower.contains("heightmap"))
+                        }
+                        Some("water") => lower.contains("water"),
+                        Some("terrain") => {
+                            lower.contains("terrain") || lower.contains("heightmap")
+                        }
+                        _ => true,
+                    }
+                })
                 .collect();
 
             let draw_entity = |ui: &mut egui::Ui,
@@ -873,151 +1188,115 @@ impl EditorApp {
                 (click, vis, lock)
             };
 
-            egui::CollapsingHeader::new(RichText::new("World").strong())
-                .default_open(true)
-                .show(ui, |ui| {
-                    egui::CollapsingHeader::new("Environment")
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            for (entity, label) in &entity_rows {
-                                if !matches!(
-                                    label.as_str(),
-                                    "DirectionalLight"
-                                        | "PointLight"
-                                        | "SpotLight"
-                                        | "SkyAtmosphere"
-                                        | "FogVolume"
-                                ) {
-                                    continue;
-                                }
-                                let selected = self.selection.entities.contains(entity);
-                                let hidden = *self.hidden.get(entity).unwrap_or(&false);
-                                let locked = *self.locked.get(entity).unwrap_or(&false);
-                                let (c, v, l) =
-                                    draw_entity(ui, *entity, label, selected, hidden, locked);
-                                clicked = clicked.or(c);
-                                toggle_vis = toggle_vis.or(v);
-                                toggle_lock = toggle_lock.or(l);
-                            }
-                        });
-
-                    egui::CollapsingHeader::new("Terrain")
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            for (entity, label) in &entity_rows {
-                                if !label.starts_with("Terrain_")
-                                    && !label.starts_with("WaterBody")
-                                {
-                                    continue;
-                                }
-                                let selected = self.selection.entities.contains(entity);
-                                let hidden = *self.hidden.get(entity).unwrap_or(&false);
-                                let locked = *self.locked.get(entity).unwrap_or(&false);
-                                let (c, v, l) =
-                                    draw_entity(ui, *entity, label, selected, hidden, locked);
-                                clicked = clicked.or(c);
-                                toggle_vis = toggle_vis.or(v);
-                                toggle_lock = toggle_lock.or(l);
-                            }
-                        });
-
-                    egui::CollapsingHeader::new("WorldObjects")
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            egui::CollapsingHeader::new("Trees")
-                                .default_open(true)
-                                .show(ui, |ui| {
-                                    for (entity, label) in &entity_rows {
-                                        if !label.starts_with("Pine_")
-                                            && !label.starts_with("Birch")
-                                            && !label.starts_with("Dead_Tree")
-                                            && !label.starts_with("Shrub_")
-                                            && !label.starts_with("Fern_")
-                                            && !label.starts_with("Grass_")
-                                        {
-                                            continue;
-                                        }
-                                        let selected = self.selection.entities.contains(entity);
-                                        let hidden = *self.hidden.get(entity).unwrap_or(&false);
-                                        let locked = *self.locked.get(entity).unwrap_or(&false);
-                                        let (c, v, l) = draw_entity(
-                                            ui, *entity, label, selected, hidden, locked,
-                                        );
-                                        clicked = clicked.or(c);
-                                        toggle_vis = toggle_vis.or(v);
-                                        toggle_lock = toggle_lock.or(l);
+            // Flat filtered list when searching / type-filtering; folders otherwise.
+            let use_flat = !filter.is_empty() || type_chip.is_some();
+            if use_flat {
+                for (entity, label) in &entity_rows {
+                    let selected = self.selection.entities.contains(entity);
+                    let hidden = *self.hidden.get(entity).unwrap_or(&false);
+                    let locked = *self.locked.get(entity).unwrap_or(&false);
+                    let (c, v, l) = draw_entity(ui, *entity, label, selected, hidden, locked);
+                    clicked = clicked.or(c);
+                    toggle_vis = toggle_vis.or(v);
+                    toggle_lock = toggle_lock.or(l);
+                }
+            } else {
+                egui::CollapsingHeader::new(RichText::new("World").strong())
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        egui::CollapsingHeader::new("Environment")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                for (entity, label) in &entity_rows {
+                                    if !matches!(
+                                        label.as_str(),
+                                        "DirectionalLight"
+                                            | "PointLight"
+                                            | "SpotLight"
+                                            | "SkyAtmosphere"
+                                            | "FogVolume"
+                                    ) {
+                                        continue;
                                     }
-                                });
-
-                            egui::CollapsingHeader::new("Rocks")
-                                .default_open(true)
-                                .show(ui, |ui| {
-                                    for (entity, label) in &entity_rows {
-                                        if !label.starts_with("Rock_") {
-                                            continue;
-                                        }
-                                        let selected = self.selection.entities.contains(entity);
-                                        let hidden = *self.hidden.get(entity).unwrap_or(&false);
-                                        let locked = *self.locked.get(entity).unwrap_or(&false);
-                                        let (c, v, l) = draw_entity(
-                                            ui, *entity, label, selected, hidden, locked,
-                                        );
-                                        clicked = clicked.or(c);
-                                        toggle_vis = toggle_vis.or(v);
-                                        toggle_lock = toggle_lock.or(l);
-                                    }
-                                });
-
-                            egui::CollapsingHeader::new("Cliffs")
-                                .default_open(true)
-                                .show(ui, |ui| {
-                                    for (entity, label) in &entity_rows {
-                                        if !label.starts_with("Cliff_") {
-                                            continue;
-                                        }
-                                        let selected = self.selection.entities.contains(entity);
-                                        let hidden = *self.hidden.get(entity).unwrap_or(&false);
-                                        let locked = *self.locked.get(entity).unwrap_or(&false);
-                                        let (c, v, l) = draw_entity(
-                                            ui, *entity, label, selected, hidden, locked,
-                                        );
-                                        clicked = clicked.or(c);
-                                        toggle_vis = toggle_vis.or(v);
-                                        toggle_lock = toggle_lock.or(l);
-                                    }
-                                });
-                        });
-
-                    egui::CollapsingHeader::new("Backdrop")
-                        .default_open(false)
-                        .show(ui, |ui| {
-                            for (entity, label) in &entity_rows {
-                                if !label.starts_with("Mountain_") {
-                                    continue;
+                                    let selected = self.selection.entities.contains(entity);
+                                    let hidden = *self.hidden.get(entity).unwrap_or(&false);
+                                    let locked = *self.locked.get(entity).unwrap_or(&false);
+                                    let (c, v, l) =
+                                        draw_entity(ui, *entity, label, selected, hidden, locked);
+                                    clicked = clicked.or(c);
+                                    toggle_vis = toggle_vis.or(v);
+                                    toggle_lock = toggle_lock.or(l);
                                 }
-                                let selected = self.selection.entities.contains(entity);
-                                let hidden = *self.hidden.get(entity).unwrap_or(&false);
-                                let locked = *self.locked.get(entity).unwrap_or(&false);
-                                let (c, v, l) =
-                                    draw_entity(ui, *entity, label, selected, hidden, locked);
-                                clicked = clicked.or(c);
-                                toggle_vis = toggle_vis.or(v);
-                                toggle_lock = toggle_lock.or(l);
-                            }
-                        });
-                });
+                            });
+
+                        egui::CollapsingHeader::new("Terrain")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                for (entity, label) in &entity_rows {
+                                    let lower = label.to_ascii_lowercase();
+                                    if !(lower.contains("terrain")
+                                        || lower.contains("heightmap")
+                                        || lower.contains("water")
+                                        || lower.contains("mountain")
+                                        || lower.contains("cliff"))
+                                    {
+                                        continue;
+                                    }
+                                    let selected = self.selection.entities.contains(entity);
+                                    let hidden = *self.hidden.get(entity).unwrap_or(&false);
+                                    let locked = *self.locked.get(entity).unwrap_or(&false);
+                                    let (c, v, l) =
+                                        draw_entity(ui, *entity, label, selected, hidden, locked);
+                                    clicked = clicked.or(c);
+                                    toggle_vis = toggle_vis.or(v);
+                                    toggle_lock = toggle_lock.or(l);
+                                }
+                            });
+
+                        egui::CollapsingHeader::new("WorldObjects")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                for (entity, label) in &entity_rows {
+                                    let lower = label.to_ascii_lowercase();
+                                    if matches!(
+                                        label.as_str(),
+                                        "DirectionalLight"
+                                            | "PointLight"
+                                            | "SpotLight"
+                                            | "SkyAtmosphere"
+                                            | "FogVolume"
+                                    ) || lower.contains("terrain")
+                                        || lower.contains("heightmap")
+                                        || lower.contains("water")
+                                        || lower.contains("mountain")
+                                        || lower.contains("cliff")
+                                    {
+                                        continue;
+                                    }
+                                    let selected = self.selection.entities.contains(entity);
+                                    let hidden = *self.hidden.get(entity).unwrap_or(&false);
+                                    let locked = *self.locked.get(entity).unwrap_or(&false);
+                                    let (c, v, l) =
+                                        draw_entity(ui, *entity, label, selected, hidden, locked);
+                                    clicked = clicked.or(c);
+                                    toggle_vis = toggle_vis.or(v);
+                                    toggle_lock = toggle_lock.or(l);
+                                }
+                            });
+                    });
+            }
 
             if let Some((entity, mode)) = clicked {
                 self.selection.apply(entity, mode);
                 self.right_tab = RightTab::Inspector;
             }
             if let Some(entity) = toggle_vis {
-                let v = self.hidden.entry(entity).or_insert(false);
-                *v = !*v;
+                let cur = *self.hidden.get(&entity).unwrap_or(&false);
+                self.hidden.insert(entity, !cur);
             }
             if let Some(entity) = toggle_lock {
-                let v = self.locked.entry(entity).or_insert(false);
-                *v = !*v;
+                let cur = *self.locked.get(&entity).unwrap_or(&false);
+                self.locked.insert(entity, !cur);
             }
         });
     }
@@ -1049,6 +1328,48 @@ impl EditorApp {
     }
 
     fn ui_viewport(&mut self, ui: &mut egui::Ui) {
+        // Mode tool palette under Modes (Landscape / Foliage).
+        if self.viewport_tool == ViewportTool::Landscape {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Landscape").strong().small());
+                // Borrowed from Unreal: sculpt vs paint without a material graph.
+                if ui
+                    .selectable_label(!self.landscape_paint, "Sculpt")
+                    .clicked()
+                {
+                    self.landscape_paint = false;
+                }
+                if ui
+                    .selectable_label(self.landscape_paint, "Paint")
+                    .clicked()
+                {
+                    self.landscape_paint = true;
+                }
+                ui.separator();
+                for (i, name) in ["Grass", "Dirt", "Rock", "Sand"].iter().enumerate() {
+                    if ui
+                        .selectable_label(self.terrain_paint_layer == i as u8, *name)
+                        .clicked()
+                    {
+                        self.terrain_paint_layer = i as u8;
+                        self.landscape_paint = true;
+                    }
+                }
+            });
+        } else if self.viewport_tool == ViewportTool::Foliage {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Foliage").strong().small());
+                ui.label("Density");
+                ui.add(egui::Slider::new(&mut self.foliage_layer.density, 0.05..=2.0));
+                ui.checkbox(&mut self.foliage_layer.align_to_normal, "Align");
+                ui.label(
+                    RichText::new(format!("{} inst", self.foliage_layer.instances.len()))
+                        .weak()
+                        .small(),
+                );
+            });
+        }
+
         let selection = self.selection.entities.clone();
         let fps = self.fps_smooth;
         let fog = self.fog_enabled;
@@ -1062,6 +1383,13 @@ impl EditorApp {
             fog,
             brush_name,
             &mut self.viewport_tool,
+            Some(&self.terrain),
+            Some(&self.foliage_layer),
+            self.grid_snap,
+            self.snap_size,
+            self.terrain_paint_layer,
+            self.landscape_paint,
+            self.game_view,
         );
         for event in events {
             match event {
@@ -1078,16 +1406,95 @@ impl EditorApp {
                     self.selection.clear();
                 }
                 ViewportEvent::Translate { delta } => {
-                    for &entity in &self.selection.entities {
-                        if *self.locked.get(&entity).unwrap_or(&false) {
-                            continue;
-                        }
-                        if let Some(transform) = self.scene.world.get_mut::<Transform>(entity) {
-                            transform.translation += delta;
-                            transform.mark_dirty();
-                        }
+                    self.translate_selection(delta);
+                }
+                ViewportEvent::DuplicateTranslate { delta } => {
+                    // Borrowed from Unreal Engine: Alt+drag duplicate-and-move.
+                    self.duplicate_selection(delta);
+                }
+                ViewportEvent::TranslateAxis { axis, delta } => {
+                    let v = match axis {
+                        GizmoAxis::X => glam::Vec3::X * delta,
+                        GizmoAxis::Y => glam::Vec3::Y * delta,
+                        GizmoAxis::Z => glam::Vec3::Z * delta,
+                    };
+                    self.translate_selection(v);
+                }
+                ViewportEvent::RotateY { radians } => {
+                    self.rotate_selection_y(radians);
+                }
+                ViewportEvent::RotateAxis { axis, radians } => {
+                    self.rotate_selection_axis(axis, radians);
+                }
+                ViewportEvent::ScaleUniform { factor } => {
+                    self.scale_selection(None, factor);
+                }
+                ViewportEvent::ScaleAxis { axis, factor } => {
+                    self.scale_selection(Some(axis), factor);
+                }
+                ViewportEvent::TerrainSculpt {
+                    world,
+                    strength,
+                    radius,
+                } => {
+                    let half = self.terrain.world_size * 0.5;
+                    self.terrain.sculpt(
+                        world.x + half,
+                        world.z + half,
+                        radius,
+                        strength,
+                    );
+                    self.status = format!(
+                        "Sculpt · h={:.2}",
+                        self.terrain.height_at_world(world.x + half, world.z + half)
+                    );
+                }
+                ViewportEvent::TerrainPaint {
+                    world,
+                    layer,
+                    strength,
+                    radius,
+                } => {
+                    let half = self.terrain.world_size * 0.5;
+                    let layer = if self.landscape_paint {
+                        self.terrain_paint_layer as usize
+                    } else {
+                        layer as usize
+                    };
+                    self.terrain.paint_layer(
+                        world.x + half,
+                        world.z + half,
+                        radius,
+                        strength,
+                        layer,
+                    );
+                    self.status = format!("Paint layer {layer}");
+                }
+                ViewportEvent::FoliagePaint { world, erase } => {
+                    if erase {
+                        self.foliage_layer.erase([world.x, world.z], 2.0);
+                        self.status = format!(
+                            "Foliage erase · {}",
+                            self.foliage_layer.instances.len()
+                        );
+                    } else {
+                        let seed = (self.foliage_layer.instances.len() as u64)
+                            .wrapping_mul(0x9E37_79B9)
+                            .wrapping_add(1);
+                        self.foliage_layer.paint_add(
+                            "pine",
+                            [world.x, world.z],
+                            world.y,
+                            2.5,
+                            1.0,
+                            0.25,
+                            seed,
+                        );
+                        self.status = format!(
+                            "Foliage paint · {}",
+                            self.foliage_layer.instances.len()
+                        );
                     }
-                    propagate_transforms(&mut self.scene.world);
                 }
                 ViewportEvent::PlaceAt { world } => {
                     if let Some(item) = self.place_brush.clone() {
@@ -1101,6 +1508,222 @@ impl EditorApp {
         }
         let aspect = self.viewport.cam.to_camera(16.0 / 9.0);
         self.camera = Some(aspect);
+    }
+
+    fn translate_selection(&mut self, delta: glam::Vec3) {
+        for &entity in &self.selection.entities {
+            if *self.locked.get(&entity).unwrap_or(&false) {
+                continue;
+            }
+            if let Some(transform) = self.scene.world.get_mut::<Transform>(entity) {
+                transform.translation += delta;
+                transform.mark_dirty();
+            }
+        }
+        propagate_transforms(&mut self.scene.world);
+    }
+
+    fn rotate_selection_y(&mut self, radians: f32) {
+        self.rotate_selection_axis(GizmoAxis::Y, radians);
+    }
+
+    fn rotate_selection_axis(&mut self, axis: GizmoAxis, radians: f32) {
+        let q = match axis {
+            GizmoAxis::X => glam::Quat::from_rotation_x(radians),
+            GizmoAxis::Y => glam::Quat::from_rotation_y(radians),
+            GizmoAxis::Z => glam::Quat::from_rotation_z(radians),
+        };
+        for &entity in &self.selection.entities {
+            if *self.locked.get(&entity).unwrap_or(&false) {
+                continue;
+            }
+            if let Some(transform) = self.scene.world.get_mut::<Transform>(entity) {
+                transform.rotation = q * transform.rotation;
+                transform.mark_dirty();
+            }
+        }
+        propagate_transforms(&mut self.scene.world);
+    }
+
+    fn scale_selection(&mut self, axis: Option<GizmoAxis>, factor: f32) {
+        for &entity in &self.selection.entities {
+            if *self.locked.get(&entity).unwrap_or(&false) {
+                continue;
+            }
+            if let Some(transform) = self.scene.world.get_mut::<Transform>(entity) {
+                match axis {
+                    Some(GizmoAxis::X) => transform.scale.x *= factor,
+                    Some(GizmoAxis::Y) => transform.scale.y *= factor,
+                    Some(GizmoAxis::Z) => transform.scale.z *= factor,
+                    None => transform.scale *= factor,
+                }
+                transform.mark_dirty();
+            }
+        }
+        propagate_transforms(&mut self.scene.world);
+    }
+
+    /// Borrowed from Godot 4: Ctrl+D duplicate with optional offset.
+    fn duplicate_selection(&mut self, offset: glam::Vec3) {
+        let selected = self.selection.entities.clone();
+        let mut new_sel = Vec::new();
+        for entity in selected {
+            let Some(t) = self.scene.world.get::<Transform>(entity).cloned() else {
+                continue;
+            };
+            let name = self
+                .entity_names
+                .get(&entity)
+                .cloned()
+                .unwrap_or_else(|| "Entity".into());
+            let mut nt = t;
+            nt.translation += offset;
+            let e = self.scene.spawn_transform(nt);
+            self.entity_names.insert(e, format!("{name}_dup"));
+            if let Some(script) = self.script_components.get(&entity).cloned() {
+                self.script_components.insert(e, script);
+            }
+            new_sel.push(e);
+        }
+        propagate_transforms(&mut self.scene.world);
+        self.selection.entities = new_sel;
+        self.status = "Duplicated selection".into();
+    }
+
+    fn new_scene_tab(&mut self) {
+        let n = self.scene_tabs.len() + 1;
+        self.scene_tabs.push(SceneTab {
+            name: format!("Scene_{n}"),
+            path: None,
+        });
+        self.active_scene_tab = self.scene_tabs.len() - 1;
+        self.status = "New scene tab (stub — same world for now)".into();
+    }
+
+    fn save_layout(&mut self) {
+        let Some(project) = self.project.as_ref() else {
+            self.status = "Open a project to save layouts".into();
+            return;
+        };
+        let layout = EditorLayout {
+            name: self.layout_name.clone(),
+            left_width: self.left_dock_width,
+            right_width: self.right_dock_width,
+            bottom_height: 180.0,
+            distraction_free: self.distraction_free,
+            grid_snap: self.grid_snap,
+            snap_size: self.snap_size,
+        };
+        match layout.save(&project.root) {
+            Ok(()) => {
+                self.status = format!("Saved layout “{}”", layout.name);
+                self.log("INFO", &self.status.clone(), Color32::from_rgb(90, 200, 120));
+            }
+            Err(err) => self.status = format!("Layout save failed: {err}"),
+        }
+    }
+
+    fn load_layout(&mut self, name: &str) {
+        let Some(project) = self.project.as_ref() else {
+            return;
+        };
+        match EditorLayout::load(&project.root, name) {
+            Ok(layout) => {
+                self.layout_name = layout.name;
+                self.left_dock_width = layout.left_width;
+                self.right_dock_width = layout.right_width;
+                self.distraction_free = layout.distraction_free;
+                self.grid_snap = layout.grid_snap;
+                self.snap_size = layout.snap_size;
+                self.status = format!("Loaded layout “{}”", self.layout_name);
+            }
+            Err(err) => self.status = format!("Layout load failed: {err}"),
+        }
+    }
+
+    fn cook_selected_stub(&mut self) {
+        let Some(project) = self.project.as_ref() else {
+            self.status = "Open a project to cook stubs".into();
+            return;
+        };
+        let mesh = project.root.join("Assets/Meshes/pine_hero.glb");
+        if let Some(parent) = mesh.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if !mesh.exists() {
+            let _ = std::fs::write(&mesh, b"stub");
+        }
+        match ensure_cook_stub(&mesh, [0.8, 2.4, 0.8]) {
+            Ok(stub) => {
+                self.status = format!(
+                    "Cooked {} · collision+LOD",
+                    AssetCookStub::meta_path_for(&mesh).display()
+                );
+                self.log(
+                    "INFO",
+                    &format!("Cook stub source={}", stub.source),
+                    Color32::from_rgb(90, 200, 120),
+                );
+            }
+            Err(err) => self.status = format!("Cook failed: {err}"),
+        }
+    }
+
+    fn focus_selected(&mut self) {
+        // Borrowed from Unreal / Godot: F frames selection.
+        let mut center = glam::Vec3::ZERO;
+        let mut count = 0usize;
+        let mut radius = 2.0_f32;
+        for &entity in &self.selection.entities {
+            if let Some(t) = self.scene.world.get::<Transform>(entity) {
+                center += t.translation;
+                count += 1;
+                radius = radius.max(t.scale.max_element() * 2.0);
+            }
+        }
+        if count > 0 {
+            center /= count as f32;
+            self.viewport.cam.focus_selection(center, radius);
+            self.status = "Focused selection".into();
+        }
+    }
+
+    fn ui_content_drawer(&mut self, ctx: &egui::Context) {
+        // Borrowed from Unreal Engine: Content Browser drawer (Ctrl+Space).
+        if !self.content_drawer_open {
+            return;
+        }
+        egui::Window::new("Content Browser")
+            .collapsible(false)
+            .resizable(true)
+            .default_size([520.0, 280.0])
+            .anchor(egui::Align2::CENTER_BOTTOM, [0.0, -40.0])
+            .show(ctx, |ui| {
+                ui.label(
+                    RichText::new("Esc closes · click asset to place brush")
+                        .weak()
+                        .small(),
+                );
+                ui.separator();
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        for item in self.world_items.clone() {
+                            let resp = ui
+                                .add_sized([88.0, 72.0], egui::Button::new(item.name))
+                                .on_hover_text(item.description);
+                            if resp.clicked() {
+                                self.status =
+                                    format!("Place: {} — click ground", item.name);
+                                self.place_brush = Some(item);
+                                self.content_drawer_open = false;
+                            }
+                        }
+                    });
+                });
+                if ui.button("Close").clicked() {
+                    self.content_drawer_open = false;
+                }
+            });
     }
 
     fn ui_assets(&mut self, ui: &mut egui::Ui) {
@@ -1248,6 +1871,63 @@ impl EditorApp {
         }
     }
 
+    fn ui_script_dock(&mut self, ui: &mut egui::Ui) {
+        // Borrowed from Godot: scripts dock while Scene tree stays visible (never hide Outliner).
+        // IntelliSense adapted from egui_code_editor Completer UX (MIT) — see script_editor.rs.
+        let scripts_dir = self.project.as_ref().map(|p| p.root.join("Scripts"));
+        self.script_editor
+            .ui(ui, scripts_dir.as_deref());
+
+        ui.add_space(6.0);
+        ui.separator();
+        ui.label(RichText::new("Attach to selected entity").strong().small());
+        if let Some(entity) = self.selection.primary() {
+            let name = self
+                .entity_names
+                .get(&entity)
+                .cloned()
+                .unwrap_or_else(|| format!("Entity {}", entity.index()));
+            ui.horizontal(|ui| {
+                ui.label(format!("• {name}"));
+                if ui
+                    .add_sized(
+                        [160.0, 28.0],
+                        egui::Button::new("Attach open script"),
+                    )
+                    .on_hover_text("Bind the open .rhai to this entity for Play")
+                    .clicked()
+                {
+                    let rel = if self.script_editor.open_rel.is_empty() {
+                        "Scripts/untitled.rhai".to_string()
+                    } else {
+                        self.script_editor.open_rel.clone()
+                    };
+                    if let Some(dir) = scripts_dir.as_ref() {
+                        let _ = self.script_editor.save(dir);
+                    }
+                    self.script_components
+                        .insert(entity, ScriptComponent::rhai(&rel));
+                    self.status = format!("Attached {rel}");
+                    self.log("INFO", &format!("ScriptComponent → {rel}"), Color32::from_rgb(90, 200, 120));
+                }
+            });
+            if let Some(script) = self.script_components.get(&entity) {
+                ui.label(
+                    RichText::new(format!("Bound: {}", script.path))
+                        .small()
+                        .color(Color32::from_rgb(140, 200, 255)),
+                );
+            }
+        } else {
+            ui.label(RichText::new("Select an entity in the Scene tree to attach.").weak().small());
+        }
+        ui.label(
+            RichText::new("Play runs attached Scripts/*.rhai via RhaiHost (on_ready / on_update). Tab = autocomplete.")
+                .weak()
+                .small(),
+        );
+    }
+
     fn ui_console(&mut self, ui: &mut egui::Ui) {
         ui.strong("Console");
         ui.separator();
@@ -1287,11 +1967,24 @@ impl EditorApp {
             .unwrap_or_else(|| format!("Entity {}", selected.index()));
         ui.heading(&name);
         ui.label(RichText::new(format!("Entity {}", selected.index())).weak().small());
+        // Borrowed from Unreal Engine: Details property search.
+        ui.horizontal(|ui| {
+            ui.label("🔍");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.inspector_filter)
+                    .desired_width(160.0)
+                    .hint_text("Filter properties…"),
+            );
+        });
         ui.separator();
+
+        let filt = self.inspector_filter.to_ascii_lowercase();
+        let show = |key: &str| filt.is_empty() || key.contains(&filt);
 
         let is_light = name.contains("Light");
         let is_sky = name.contains("Sky") || name.contains("Fog");
 
+        if show("transform") {
         egui::CollapsingHeader::new("Transform")
             .default_open(true)
             .show(ui, |ui| {
@@ -1380,8 +2073,9 @@ impl EditorApp {
                     propagate_transforms(&mut self.scene.world);
                 }
             });
+        }
 
-        if is_light {
+        if is_light && show("light") {
             egui::CollapsingHeader::new("Light")
                 .default_open(true)
                 .show(ui, |ui| {
@@ -1410,7 +2104,7 @@ impl EditorApp {
                 });
         }
 
-        if is_sky || is_light {
+        if (is_sky || is_light) && show("sky") {
             egui::CollapsingHeader::new("Sky & Atmosphere")
                 .default_open(is_sky || is_light)
                 .show(ui, |ui| {
@@ -1605,11 +2299,45 @@ impl eframe::App for EditorApp {
         Self::apply_theme(ctx);
         self.ensure_logo(ctx);
 
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && self.place_brush.is_some() {
-            self.place_brush = None;
-            self.status = "Place mode cancelled".into();
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if self.content_drawer_open {
+                self.content_drawer_open = false;
+            } else if self.place_brush.is_some() {
+                self.place_brush = None;
+                self.status = "Place mode cancelled".into();
+            }
         }
-        // Godot 3D editor shortcuts: Q = Select, W = Move (E/R later).
+
+        // Borrowed from Unreal Engine: Ctrl+Space Content Browser drawer.
+        if ctx.input(|i| {
+            i.key_pressed(egui::Key::Space) && (i.modifiers.ctrl || i.modifiers.command)
+        }) {
+            self.content_drawer_open = !self.content_drawer_open;
+        }
+
+        // Borrowed from Unreal Engine: G toggles Game view (hide gizmos).
+        if ctx.input(|i| i.key_pressed(egui::Key::G) && !i.modifiers.any()) {
+            self.game_view = !self.game_view;
+            self.status = if self.game_view {
+                "Game view — gizmos hidden".into()
+            } else {
+                "Edit view".into()
+            };
+        }
+
+        // Borrowed from Unreal / Godot: F focuses selection.
+        if ctx.input(|i| i.key_pressed(egui::Key::F) && !i.modifiers.any()) {
+            self.focus_selected();
+        }
+
+        // Borrowed from Godot 4: Ctrl+D duplicate.
+        if ctx.input(|i| {
+            i.key_pressed(egui::Key::D) && (i.modifiers.ctrl || i.modifiers.command)
+        }) {
+            self.duplicate_selection(glam::Vec3::new(1.0, 0.0, 0.0));
+        }
+
+        // Godot 3D + Unreal Modes shortcuts (exclusive bindings).
         if self.place_brush.is_none() {
             if ctx.input(|i| i.key_pressed(egui::Key::Q)) {
                 self.viewport_tool = ViewportTool::Select;
@@ -1617,12 +2345,37 @@ impl eframe::App for EditorApp {
             if ctx.input(|i| i.key_pressed(egui::Key::W)) {
                 self.viewport_tool = ViewportTool::Move;
             }
+            if ctx.input(|i| i.key_pressed(egui::Key::E)) {
+                self.viewport_tool = ViewportTool::Rotate;
+            }
+            if ctx.input(|i| i.key_pressed(egui::Key::R)) {
+                self.viewport_tool = ViewportTool::Scale;
+            }
+            // Borrowed from Unreal Engine: Shift+1..3 Modes (+4 RayAccurate).
+            let shift = ctx.input(|i| i.modifiers.shift);
+            if shift && ctx.input(|i| i.key_pressed(egui::Key::Num1)) {
+                self.viewport_tool = ViewportTool::Select;
+            }
+            if shift && ctx.input(|i| i.key_pressed(egui::Key::Num2)) {
+                self.viewport_tool = ViewportTool::Landscape;
+            }
+            if shift && ctx.input(|i| i.key_pressed(egui::Key::Num3)) {
+                self.viewport_tool = ViewportTool::Foliage;
+            }
+            if shift && ctx.input(|i| i.key_pressed(egui::Key::Num4)) {
+                self.viewport_tool = ViewportTool::RayAccurate;
+            }
         }
 
         let dt = self.frame_start.elapsed().as_secs_f32().max(1e-4);
         self.frame_start = Instant::now();
         let fps = 1.0 / dt;
         self.fps_smooth = self.fps_smooth * 0.9 + fps * 0.1;
+
+        if self.play.is_playing() {
+            let cmds = self.play.tick(dt);
+            self.apply_script_commands(cmds);
+        }
 
         egui::TopBottomPanel::top("menu")
             .exact_height(28.0)
@@ -1636,12 +2389,29 @@ impl eframe::App for EditorApp {
                 self.ui_toolbar(ui);
             });
 
+        let tool_name = match self.viewport_tool {
+            ViewportTool::Select => "Select",
+            ViewportTool::Move => "Move",
+            ViewportTool::Rotate => "Rotate",
+            ViewportTool::Scale => "Scale",
+            ViewportTool::Landscape => "Landscape",
+            ViewportTool::Foliage => "Foliage",
+            ViewportTool::RayAccurate => "RayAccurate",
+        };
+        let workspace = match self.workspace {
+            WorkspaceMode::ThreeD => "3D",
+            WorkspaceMode::Script => "Script",
+            WorkspaceMode::Game => "Game",
+        };
         egui::TopBottomPanel::bottom("status")
             .exact_height(24.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Ready").strong());
-                    if !self.status.is_empty() && self.status != "Ready" {
+                    // Borrowed from EDITOR_UX: mode · tool · backend · FPS · hint.
+                    ui.label(RichText::new(workspace).strong());
+                    ui.label(RichText::new("|").weak());
+                    ui.label(RichText::new(tool_name).color(Color32::from_rgb(120, 180, 255)));
+                    if !self.status.is_empty() {
                         ui.label(RichText::new("|").weak());
                         ui.label(&self.status);
                     }
@@ -1652,7 +2422,15 @@ impl eframe::App for EditorApp {
                                 .color(Color32::from_rgb(90, 200, 120)),
                         );
                         ui.label(RichText::new("|").weak());
-                        ui.label(RichText::new("Git: main").weak().small());
+                        ui.label(
+                            RichText::new(if self.grid_snap {
+                                format!("Snap {:.1}", self.snap_size)
+                            } else {
+                                "Snap off".into()
+                            })
+                            .weak()
+                            .small(),
+                        );
                         ui.label(RichText::new("|").weak());
                         ui.label(RichText::new("Water v1").weak().small());
                         ui.label(RichText::new("|").weak());
@@ -1663,59 +2441,83 @@ impl eframe::App for EditorApp {
                 });
             });
 
-        egui::SidePanel::left("left_dock")
-            .default_width(260.0)
-            .width_range(200.0..=400.0)
-            .show(ctx, |ui| {
-                let total = ui.available_height();
-                egui::TopBottomPanel::top("outliner_dock")
-                    .exact_height(total * 0.58)
-                    .resizable(true)
-                    .show_inside(ui, |ui| {
-                        self.ui_outliner(ui);
+        // Borrowed from Godot 4: distraction-free hides side docks.
+        if !self.distraction_free {
+            egui::SidePanel::left("left_dock")
+                .default_width(self.left_dock_width)
+                .width_range(200.0..=400.0)
+                .show(ctx, |ui| {
+                    self.left_dock_width = ui.available_width();
+                    let total = ui.available_height();
+                    egui::TopBottomPanel::top("outliner_dock")
+                        .exact_height(total * 0.58)
+                        .resizable(true)
+                        .show_inside(ui, |ui| {
+                            self.ui_outliner(ui);
+                        });
+                    egui::CentralPanel::default().show_inside(ui, |ui| {
+                        self.ui_filesystem(ui);
                     });
-                egui::CentralPanel::default().show_inside(ui, |ui| {
-                    self.ui_filesystem(ui);
-                });
-            });
-
-        egui::SidePanel::right("right_dock")
-            .default_width(320.0)
-            .width_range(260.0..=520.0)
-            .show(ctx, |ui| {
-                self.ui_right_panel(ui);
-            });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let total = ui.available_height();
-            egui::TopBottomPanel::top("viewport_dock")
-                .exact_height((total * 0.62).max(220.0))
-                .resizable(true)
-                .show_inside(ui, |ui| {
-                    self.ui_viewport(ui);
                 });
 
-            egui::CentralPanel::default().show_inside(ui, |ui| {
-                ui.horizontal(|ui| {
-                    if ui
-                        .selectable_label(self.bottom_tab == BottomTab::Assets, "Asset Browser")
-                        .clicked()
-                    {
-                        self.bottom_tab = BottomTab::Assets;
+            egui::SidePanel::right("right_dock")
+                .default_width(self.right_dock_width)
+                .width_range(240.0..=480.0)
+                .show(ctx, |ui| {
+                    self.right_dock_width = ui.available_width();
+                    ui.horizontal(|ui| {
+                        if ui
+                            .selectable_label(self.right_tab == RightTab::Inspector, "Inspector")
+                            .clicked()
+                        {
+                            self.right_tab = RightTab::Inspector;
+                        }
+                        if ui
+                            .selectable_label(self.right_tab == RightTab::Node, "Node Graph")
+                            .clicked()
+                        {
+                            self.right_tab = RightTab::Node;
+                        }
+                    });
+                    ui.separator();
+                    match self.right_tab {
+                        RightTab::Inspector => self.ui_inspector(ui),
+                        RightTab::Node => self.ui_right_panel(ui),
                     }
-                    if ui
-                        .selectable_label(self.bottom_tab == BottomTab::Console, "Console")
-                        .clicked()
-                    {
-                        self.bottom_tab = BottomTab::Console;
+                });
+        }
+
+        egui::TopBottomPanel::bottom("bottom_dock")
+            .default_height(180.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    for (label, tab) in [
+                        ("Assets", BottomTab::Assets),
+                        ("Console", BottomTab::Console),
+                        ("Script", BottomTab::Script),
+                    ] {
+                        if ui
+                            .selectable_label(self.bottom_tab == tab, label)
+                            .clicked()
+                        {
+                            self.bottom_tab = tab;
+                        }
                     }
                 });
                 ui.separator();
                 match self.bottom_tab {
                     BottomTab::Assets => self.ui_assets(ui),
                     BottomTab::Console => self.ui_console(ui),
+                    BottomTab::Script => self.ui_script_dock(ui),
                 }
             });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            self.ui_viewport(ui);
         });
+
+        self.ui_content_drawer(ctx);
+        ctx.request_repaint();
     }
 }

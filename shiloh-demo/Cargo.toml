@@ -19,6 +19,7 @@ glam.workspace = true
 pollster.workspace = true
 rayon.workspace = true
 serde_json.workspace = true
+shiloh-app = { workspace = true, features = ["desktop"] }
 shiloh-animation = { workspace = true }
 shiloh-assets = { workspace = true, features = ["gltf", "hot-reload"] }
 shiloh-audio = { workspace = true }

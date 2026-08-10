@@ -136,11 +136,11 @@ flowchart LR
 | Tier | Language | Status |
 |---|---|---|
 | 1 | Rust `ScriptModule` | **Available** |
-| 2 | JavaScript (e.g. Boa — pure Rust) | Planned |
-| 3 | Rhai (embeddable Rust DSL) | Planned |
-| 4 | Visual scripting | Later |
+| 2 | **Rhai** (embeddable DSL — Godot GDScript niche) | **Available** (Phase 5) |
+| 3 | Visual scripting (Event→Action — Blueprint-lite) | **Available** (Phase 5) |
+| 4 | JavaScript (e.g. Boa — pure Rust) | Deferred |
 
-Gameplay authors will call a small safe API (spawn, transform, input, events) — not raw ECS internals.
+Gameplay authors call a small safe API (`on_ready`, `on_update`, spawn, transform, input, signals) — not raw ECS internals. Editor UX borrows Godot docks + Unreal Modes ([EDITOR_UX.md](EDITOR_UX.md)).
 
 ---
 
@@ -153,7 +153,7 @@ Gameplay authors will call a small safe API (spawn, transform, input, events) �
 
 | Preview | Caption |
 |---|---|
-| ![Editor viewport](screenshots/01-editor-viewport.png) | **Editor viewport** — scene camera, gizmo, grid *(placeholder)* |
+| ![Editor viewport](screenshots/01-editor-viewport.png) | **Editor viewport** — Forest_Valley outdoor still (Phase 5 / Compete gate) |
 | ![Scene hierarchy](screenshots/02-scene-hierarchy.png) | **Scene hierarchy** — entities, prefabs, multi-select *(placeholder)* |
 | ![Inspector](screenshots/03-inspector.png) | **Inspector** — components & materials *(placeholder)* |
 

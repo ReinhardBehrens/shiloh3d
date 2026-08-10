@@ -1,9 +1,14 @@
 # Shiloh3D — Quality bar analysis
 
-**Reference:** isometric dark-fantasy ARPG combat in a swamp (“Blackmarsh / The Lions Gate”).  
-Asset: [`references/quality-bar-arpg-swamp.png`](references/quality-bar-arpg-swamp.png)
+**References:**
 
-> **Confirmed north star (user):** this shot is the target for **effects, atmosphere, and real water** — not a soft “nice to have.” Graphics work is judged against this mood and water fidelity.
+| Shot | Path | Role |
+|---|---|---|
+| Blackmarsh swamp ARPG | [`references/quality-bar-arpg-swamp.png`](references/quality-bar-arpg-swamp.png) | Effects, atmosphere, **real water** |
+| Lions Gate fight | [`references/lions-gate-fight-01.png`](references/lions-gate-fight-01.png) | Skinned combatants, knight + foes, forest/marsh fight presentation |
+| Lions Gate menu | [`references/lions-gate-main-menu.png`](references/lions-gate-main-menu.png) | Game shell / campaign menu chrome |
+
+> **Confirmed north star (user):** the swamp shot is the target for **effects, atmosphere, and real water** — not a soft “nice to have.” The fight still (`lions-gate-fight-01.png`) is the target for **animated combat characters** in the same world. Graphics work is judged against this mood, water fidelity, and combat presentation.
 
 This is roughly **Diablo IV / Path of Exile–class presentation**: dense foliage, wet PBR materials, multi-light night scene, **interactive reflective water**, skinned combatants, ornate HUD. It is a **credible long-term graphics + content bar** for Shiloh3D’s “excellent PBR + large-world” thesis.
 

@@ -59,6 +59,17 @@ Current **Shiloh Studio** captures (working editor — visuals still improving):
 
 More captures: [`docs/screenshots/`](docs/screenshots/) · gate report: [`docs/screenshots/gate-report.md`](docs/screenshots/gate-report.md)
 
+### Lions Gate combat target
+
+Quality bar for skinned fight scenes (knight + foes) — build toward this presentation:
+
+<p align="center">
+  <img src="docs/references/lions-gate-fight-01.png" alt="Lions Gate combat quality reference" width="900" /><br/>
+  <sub>Combat / animation target — <code>docs/references/lions-gate-fight-01.png</code></sub>
+</p>
+
+Related: [`lions-gate-fight-02.png`](docs/references/lions-gate-fight-02.png) · [`lions-gate-fight-03.png`](docs/references/lions-gate-fight-03.png) · menu art [`lions-gate-main-menu.png`](docs/references/lions-gate-main-menu.png)
+
 ---
 
 ## Why Shiloh3D?
